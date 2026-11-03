@@ -95,3 +95,8 @@ This session delivered a comprehensive redesign and major functionality enhancem
     *   Rolled back the accidental commit on `https://github.com/vivek5239/Subscriptions.git` back to `ef30019`.
     *   Configured the local Git remote to point to the dedicated repository [`https://github.com/vivek5239/omniRemaindersV2.git`](https://github.com/vivek5239/omniRemaindersV2.git).
     *   Pushed `main` to `https://github.com/vivek5239/omniRemaindersV2.git`.
+
+*   **Gemini Model Upgrade:**
+    *   Transitioned the default and recommended Gemini model to the latest flagship release **`gemini-3.8-flash`**.
+    *   Updated the model discovery endpoint `/api/gemini/models` to include `gemini-3.8-flash` (recommended), `gemini-3.5-pro`, `gemini-3.8-pro`, `gemini-3.5-flash`, and `gemini-3.5-flash-lite`.
+    *   Rebuilt and pushed the production Docker image `vivek5239/reminders-app:latest` to Docker Hub.

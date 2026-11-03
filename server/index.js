@@ -84,7 +84,7 @@ async function ensureSettingsFile() {
   } catch (e) {
     const defaultSettings = {
       geminiApiKey: process.env.GEMINI_API_KEY || '',
-      geminiModel: 'gemini-2.5-pro',
+      geminiModel: 'gemini-3.8-flash',
       calendarificApiKey: '',
       gotifyUrl: '',
       gotifyToken: '',
@@ -444,10 +444,11 @@ app.get('/api/holiday-date', async (req, res) => {
 app.get('/api/gemini/models', (req, res) => {
   res.json({
     models: [
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Recommended)', description: 'Most capable model for reasoning and complex reminders' },
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and responsive model' },
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Reliable high-capacity reasoning model' },
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Lightweight and fast' }
+      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
+      { id: 'gemini-3.5-pro', name: 'Gemini 3.5 Pro', description: 'Advanced reasoning and complex schedule deduction' },
+      { id: 'gemini-3.8-pro', name: 'Gemini 3.8 Pro', description: 'Flagship reasoning model for heavy workloads' },
+      { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: 'Fast, reliable general-purpose model' },
+      { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', description: 'Ultra-fast, lightweight model' }
     ]
   });
 });
@@ -455,7 +456,7 @@ app.get('/api/gemini/models', (req, res) => {
 // Backward compatibility for groq models route
 app.get('/api/groq/models', (req, res) => {
   res.json({
-    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
+    models: ['gemini-3.8-flash', 'gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']
   });
 });
 
@@ -473,7 +474,7 @@ app.post('/api/ai/create-reminder', async (req, res) => {
     return res.status(400).json({ error: 'Reminder text is required.' });
   }
 
-  const modelToUse = model || currentSettings.geminiModel || 'gemini-2.5-pro';
+  const modelToUse = model || currentSettings.geminiModel || 'gemini-3.8-flash';
   console.log(`[Gemini AI] Processing reminder using model: ${modelToUse}`);
 
   try {
@@ -550,7 +551,7 @@ app.post('/api/ai/analyze', async (req, res) => {
 
   try {
     const reminders = await getAllReminders();
-    const modelToUse = currentSettings.geminiModel || 'gemini-2.5-pro';
+    const modelToUse = currentSettings.geminiModel || 'gemini-3.8-flash';
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const generativeModel = genAI.getGenerativeModel({
@@ -856,11 +857,11 @@ app.get('/api/settings', async (req, res) => {
       ...settings,
       dailyCheckTime: settings.dailyCheckTime || '09:00',
       lastDailyCheck: settings.lastDailyCheck || null,
-      geminiModel: settings.geminiModel || 'gemini-2.5-pro'
+      geminiModel: settings.geminiModel || 'gemini-3.8-flash'
     });
   } catch (error) {
     console.error(`[Settings] Error reading settings: ${error.message}`);
-    res.json({ dailyCheckTime: '09:00', lastDailyCheck: null, geminiModel: 'gemini-2.5-pro' });
+    res.json({ dailyCheckTime: '09:00', lastDailyCheck: null, geminiModel: 'gemini-3.8-flash' });
   }
 });
 

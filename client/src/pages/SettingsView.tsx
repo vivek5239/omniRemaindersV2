@@ -15,7 +15,7 @@ import { useTheme, type ThemeColor } from '../context/ThemeContext';
 export default function SettingsView() {
   const [config, setConfig] = useState<Settings>({
     geminiApiKey: '',
-    geminiModel: 'gemini-2.5-pro',
+    geminiModel: 'gemini-3.8-flash',
     calendarificApiKey: '',
     gotifyUrl: '',
     gotifyToken: '',
@@ -82,7 +82,7 @@ export default function SettingsView() {
         setConfig(prev => ({
           ...prev,
           ...res.data,
-          geminiModel: res.data.geminiModel || 'gemini-2.5-pro'
+          geminiModel: res.data.geminiModel || 'gemini-3.8-flash'
         }));
       }
     } catch (err) {
@@ -100,10 +100,11 @@ export default function SettingsView() {
       console.error('Failed to load Gemini models:', err);
       // Fallback
       setGeminiModels([
-        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Recommended)', description: 'Most capable model' },
-        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and responsive' },
-        { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Advanced reasoning' },
-        { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Lightweight' }
+        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
+        { id: 'gemini-3.5-pro', name: 'Gemini 3.5 Pro', description: 'Advanced reasoning and complex schedule deduction' },
+        { id: 'gemini-3.8-pro', name: 'Gemini 3.8 Pro', description: 'Flagship reasoning model for heavy workloads' },
+        { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: 'Fast, reliable general-purpose model' },
+        { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', description: 'Ultra-fast, lightweight model' }
       ]);
     }
   };
@@ -359,7 +360,7 @@ export default function SettingsView() {
                       <Form.Group>
                         <Form.Label className="fw-medium small">Gemini Model</Form.Label>
                         <Form.Select
-                          value={config.geminiModel || 'gemini-2.5-pro'}
+                          value={config.geminiModel || 'gemini-3.8-flash'}
                           onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
                         >
                           {geminiModels.map(m => (
@@ -369,7 +370,7 @@ export default function SettingsView() {
                           ))}
                         </Form.Select>
                         <Form.Text className="text-muted">
-                          Recommended: <strong>gemini-2.5-pro</strong> for optimal reasoning with recurring schedules and holiday inference.
+                          Recommended: <strong>gemini-3.8-flash</strong> (Latest) for ultra-fast, intelligent reminder creation.
                         </Form.Text>
                       </Form.Group>
                     </Col>

@@ -105,7 +105,7 @@ export default function Dashboard() {
     try {
       const res = await axios.post('/api/ai/create-reminder', {
         text: textForAi,
-        model: settings.geminiModel || 'gemini-2.5-pro'
+        model: settings.geminiModel || 'gemini-3.8-flash'
       });
 
       if (res.data.question) {
@@ -296,7 +296,7 @@ export default function Dashboard() {
             </div>
             <span className="fw-bold">Smart Natural Language Creation</span>
             <Badge bg="secondary" className="rounded-pill text-uppercase fw-normal" style={{ fontSize: '0.65rem' }}>
-              {settings?.geminiModel || 'gemini-2.5-pro'}
+              {settings?.geminiModel || 'gemini-3.8-flash'}
             </Badge>
           </div>
           <span className="text-muted small">
