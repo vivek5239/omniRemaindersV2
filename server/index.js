@@ -1,3 +1,10 @@
+import dns from 'dns';
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch (e) {
+  // Ignore on older Node
+}
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -472,17 +479,18 @@ app.get('/api/holiday-date', async (req, res) => {
 // ----------------------------------------------------
 
 const CURATED_GEMINI_MODELS = [
-  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
-  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
-  { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' },
+  { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite Latest (Fastest & Free Tier Recommended)', description: 'Ultra-fast, generous rate limits, zero quota bottlenecks on Free Tier' },
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Flagship Flash)', description: 'Flagship reasoning model (limited to 20 requests/day on Google Free Tier)' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: 'Lightweight, rapid response model' },
   { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast, reliable production model' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Deep reasoning, coding, and complex analysis' }
+  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
+  { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' }
 ];
 
 function sanitizeModelName(modelName) {
   const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
   if (!modelName || invalid.includes(modelName)) {
-    return 'gemini-3.8-flash';
+    return 'gemini-flash-lite-latest';
   }
   return modelName;
 }
@@ -524,14 +532,16 @@ app.get('/api/gemini/models', async (req, res) => {
         });
 
       if (validModels.length > 0) {
-        // Prioritize gemini-3.8-flash, gemini-flash-latest, gemini-pro-latest
+        // Prioritize gemini-flash-lite-latest, gemini-3.8-flash, gemini-3.1-flash-lite
         validModels.sort((a, b) => {
+          if (a.id === 'gemini-flash-lite-latest') return -1;
+          if (b.id === 'gemini-flash-lite-latest') return 1;
           if (a.id === 'gemini-3.8-flash') return -1;
           if (b.id === 'gemini-3.8-flash') return 1;
+          if (a.id === 'gemini-3.1-flash-lite') return -1;
+          if (b.id === 'gemini-3.1-flash-lite') return 1;
           if (a.id === 'gemini-flash-latest') return -1;
           if (b.id === 'gemini-flash-latest') return 1;
-          if (a.id === 'gemini-pro-latest') return -1;
-          if (b.id === 'gemini-pro-latest') return 1;
           return a.id.localeCompare(b.id);
         });
 
@@ -554,9 +564,13 @@ app.get('/api/groq/models', (req, res) => {
 });
 
 async function generateContentWithRetry(genAI, primaryModel, contents, options, maxRetries = 2) {
-  const candidateModels = [primaryModel];
-  if (!candidateModels.includes('gemini-flash-latest')) candidateModels.push('gemini-flash-latest');
-  if (!candidateModels.includes('gemini-3.7-flash')) candidateModels.push('gemini-3.7-flash');
+  const candidateModels = [
+    primaryModel,
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-3.6-flash',
+    'gemini-flash-latest'
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
 
   let lastError = null;
 
@@ -573,12 +587,21 @@ async function generateContentWithRetry(genAI, primaryModel, contents, options, 
       } catch (err) {
         lastError = err;
         const msg = err.message || '';
-        const isTransient = msg.includes('503') || msg.includes('high demand') || msg.includes('429');
+        const isQuotaOrLimit = msg.includes('429') || msg.includes('quota') || msg.includes('exceeded your current quota');
+        const isTransient = msg.includes('503') || msg.includes('high demand') || msg.includes('fetch failed');
+
+        if (isQuotaOrLimit) {
+          console.warn(`[Gemini AI] Model ${modelToTry} quota exceeded on this tier. Instantly failing over to next model...`);
+          break; // Immediately break to try next candidate model!
+        }
+
         if (isTransient && attempt < maxRetries) {
-          console.warn(`[Gemini AI] Model ${modelToTry} returned high demand/rate-limit. Waiting before retry...`);
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          console.warn(`[Gemini AI] Model ${modelToTry} busy (${msg.substring(0, 80)}). Waiting before retry...`);
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
           continue;
         }
+
+        console.warn(`[Gemini AI] Model ${modelToTry} exhausted attempts (${msg.substring(0, 80)}). Trying fallback candidate...`);
         break;
       }
     }

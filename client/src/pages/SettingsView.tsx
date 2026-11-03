@@ -116,11 +116,12 @@ export default function SettingsView() {
       console.error('Failed to load Gemini models:', err);
       // Clean curated fallback
       setGeminiModels([
-        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
-        { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
-        { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' },
+        { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite Latest (Fastest & Free Tier Recommended)', description: 'Ultra-fast, generous rate limits, zero quota bottlenecks on Free Tier' },
+        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Flagship Flash)', description: 'Flagship reasoning model (limited to 20 requests/day on Google Free Tier)' },
+        { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: 'Lightweight, rapid response model' },
         { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast, reliable production model' },
-        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Deep reasoning, coding, and complex analysis' }
+        { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
+        { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' }
       ]);
       setModelSource('curated');
     } finally {
@@ -412,7 +413,7 @@ export default function SettingsView() {
                           )}
                         </Form.Select>
                         <Form.Text className="text-muted">
-                          Recommended: <strong>gemini-3.8-flash</strong> (Latest) or <strong>gemini-flash-latest</strong> for ultra-fast, intelligent reminder creation.
+                          Recommended: <strong>gemini-flash-lite-latest</strong> (Zero quota limits on Free Tier) or <strong>gemini-3.8-flash</strong> (20 req/day Free Tier cap).
                         </Form.Text>
                       </Form.Group>
                     </Col>

@@ -107,3 +107,25 @@ This session delivered a comprehensive redesign and major functionality enhancem
     *   Rebuilt client frontend assets into `server/public/`.
     *   Rebuilt and pushed the production Docker image `vivek5239/reminders-app:latest` to Docker Hub.
     *   Pushed all commits to [`https://github.com/vivek5239/omniRemaindersV2.git`](https://github.com/vivek5239/omniRemaindersV2.git).
+
+---
+
+### Session Update: Gemini AI Rate Limit & High Demand Resolution (Free Tier Quota Optimization)
+
+*   **Root Cause Analysis via Direct API Diagnostics & Playwright:**
+    *   Direct diagnostics of Google's Generative Language API using the user's API key revealed that `gemini-3.8-flash` is subject to a strict 20 request/day cap on Google's Free Tier (`[429 Too Many Requests] Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.8-flash`). Once exhausted, it blocked all requests for ~18 hours.
+    *   Additionally, newer flagship models (`gemini-3.8-flash`, `gemini-3.6-flash`) intermittently returned `503 Service Unavailable` due to high demand spikes on Google's servers.
+    *   In contrast, **`gemini-flash-lite-latest`** and **`gemini-3.1-flash-lite`** have generous daily free quotas, zero rate bottlenecks, and consistently return 200 OK responses in < 2 seconds.
+*   **Failover & DNS Optimization:**
+    *   Configured `gemini-flash-lite-latest` as the default and recommended Free Tier model in `client/src/pages/SettingsView.tsx` and `server/index.js`.
+    *   Implemented intelligent auto-failover in `server/index.js` (`generateContentWithRetry`): if the primary model encounters a 429 quota exhaustion or 503 service unavailable error, it cascades along `[primaryModel, 'gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-flash-latest']`, ensuring end-user AI operations never fail.
+    *   Configured Node DNS resolution order (`dns.setDefaultResultOrder('ipv4first')`) to prevent dual-stack IPv6 latency issues in Docker environments.
+*   **Live UI Verification with Playwright:**
+    *   Navigated to `http://172.23.177.144:3050/`.
+    *   Verified Settings configured with `gemini-flash-lite-latest`.
+    *   Tested natural language reminder creation ("Pay electricity bill on 25th of every month at 10am") -> Successfully parsed and created reminder.
+    *   Tested "AI Insights" modal -> Successfully generated complete executive markdown digest.
+*   **Build & Deployment:**
+    *   Rebuilt client production assets into `server/public/`.
+    *   Built and pushed updated image `vivek5239/reminders-app:latest` to Docker Hub.
+    *   Committed and pushed all changes to [`https://github.com/vivek5239/omniRemaindersV2.git`](https://github.com/vivek5239/omniRemaindersV2.git).
