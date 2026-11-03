@@ -553,6 +553,40 @@ app.get('/api/groq/models', (req, res) => {
   });
 });
 
+async function generateContentWithRetry(genAI, primaryModel, contents, options, maxRetries = 2) {
+  const candidateModels = [primaryModel];
+  if (!candidateModels.includes('gemini-flash-latest')) candidateModels.push('gemini-flash-latest');
+  if (!candidateModels.includes('gemini-3.7-flash')) candidateModels.push('gemini-3.7-flash');
+
+  let lastError = null;
+
+  for (const modelToTry of candidateModels) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[Gemini AI] Trying model: ${modelToTry} (attempt ${attempt + 1}/${maxRetries + 1})`);
+        const generativeModel = genAI.getGenerativeModel({
+          model: modelToTry,
+          ...options
+        });
+        const result = await generativeModel.generateContent(contents);
+        return result;
+      } catch (err) {
+        lastError = err;
+        const msg = err.message || '';
+        const isTransient = msg.includes('503') || msg.includes('high demand') || msg.includes('429');
+        if (isTransient && attempt < maxRetries) {
+          console.warn(`[Gemini AI] Model ${modelToTry} returned high demand/rate-limit. Waiting before retry...`);
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 // AI Reminder Creation via Google Gemini
 app.post('/api/ai/create-reminder', async (req, res) => {
   const apiKey = (currentSettings.geminiApiKey || process.env.GEMINI_API_KEY || '').trim();
@@ -572,8 +606,7 @@ app.post('/api/ai/create-reminder', async (req, res) => {
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const generativeModel = genAI.getGenerativeModel({
-      model: modelToUse,
+    const result = await generateContentWithRetry(genAI, modelToUse, text, {
       systemInstruction: reminderSystemPrompt,
       generationConfig: {
         responseMimeType: 'application/json',
@@ -581,7 +614,6 @@ app.post('/api/ai/create-reminder', async (req, res) => {
       }
     });
 
-    const result = await generativeModel.generateContent(text);
     const responseText = result.response.text();
     console.log('[Gemini AI] Raw response:', responseText);
 
@@ -648,8 +680,9 @@ app.post('/api/ai/analyze', async (req, res) => {
     console.log(`[Gemini AI] Analyzing reminders using model: ${modelToUse}`);
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const generativeModel = genAI.getGenerativeModel({
-      model: modelToUse,
+    const prompt = `Here are the user's current reminders in JSON:\n${JSON.stringify(reminders, null, 2)}\nToday's date is ${new Date().toISOString().split('T')[0]}. Analyze these reminders and provide actionable insights.`;
+
+    const result = await generateContentWithRetry(genAI, modelToUse, prompt, {
       systemInstruction: `You are an executive personal assistant analyzing the user's reminders. Provide a concise, structured markdown report with:
 1. 📊 Executive Summary (overall status, upcoming workload)
 2. 🚨 Immediate Priorities (due today or within 3 days)
@@ -657,9 +690,6 @@ app.post('/api/ai/analyze', async (req, res) => {
 Keep the tone helpful, professional, and clear.`
     });
 
-    const prompt = `Here are the user's current reminders in JSON:\n${JSON.stringify(reminders, null, 2)}\nToday's date is ${new Date().toISOString().split('T')[0]}. Analyze these reminders and provide actionable insights.`;
-
-    const result = await generativeModel.generateContent(prompt);
     res.json({ analysis: result.response.text() });
   } catch (error) {
     console.error('[Gemini AI Analyze Error]:', error);
