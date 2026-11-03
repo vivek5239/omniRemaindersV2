@@ -76,7 +76,7 @@ This session delivered a comprehensive redesign and major functionality enhancem
 
 **3. Notification System Fixes (Gotify & SMTP Email):**
 *   **Resolved 404 Errors:** Implemented the missing backend routes `POST /api/test/gotify` and `POST /api/test/email` which previously caused 404 (Not Found) errors when testing notifications from the UI.
-*   **Gotify Push Verification:** Normalized Gotify URLs (trimming slashes) and verified push notification dispatch against `https://gotify.rvitservices.uk/` with the active app token `gtfya.IAbjZo1Zs9fdyt7smTEp3SNOwmJtPiCTCKQPVVvNfZk` (tested and confirmed working with HTTP 200 response).
+*   **Gotify Push Verification:** Normalized Gotify URLs (trimming slashes) and verified push notification dispatch against `https://gotify.rvitservices.uk/` with the configured app token (tested and confirmed working with HTTP 200 response).
 *   **Email (SMTP) Verification:** Implemented automated credential whitespace trimming on passwords (resolving trailing spaces on Google App Passwords) and verified TLS transport against Gmail SMTP, successfully delivering test messages to `vivek.sattanatha@outlook.com`.
 *   **Daily Scheduler Dispatch:** Implemented the previously missing notification dispatch in `scheduleDailyReminder` and `POST /api/test/reminders`. The system now scans active reminders and automatically dispatches Gotify push alerts and formatted HTML emails for reminders due within their `remindBefore` window or overdue by <= 3 days.
 
