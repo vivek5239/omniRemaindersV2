@@ -96,7 +96,13 @@ This session delivered a comprehensive redesign and major functionality enhancem
     *   Configured the local Git remote to point to the dedicated repository [`https://github.com/vivek5239/omniRemaindersV2.git`](https://github.com/vivek5239/omniRemaindersV2.git).
     *   Pushed `main` to `https://github.com/vivek5239/omniRemaindersV2.git`.
 
-*   **Gemini Model Upgrade:**
-    *   Transitioned the default and recommended Gemini model to the latest flagship release **`gemini-3.8-flash`**.
-    *   Updated the model discovery endpoint `/api/gemini/models` to include `gemini-3.8-flash` (recommended), `gemini-3.5-pro`, `gemini-3.8-pro`, `gemini-3.5-flash`, and `gemini-3.5-flash-lite`.
+*   **Gemini Model Upgrade & Fix:**
+    *   Transitioned the default and recommended Gemini model to the latest production release **`gemini-3.8-flash`**.
+    *   Resolved GoogleGenerativeAI 404 error (`models/gemini-3.5-pro is not found for API version v1beta`) caused by selecting nonexistent model IDs.
+    *   Implemented dynamic model discovery in `/api/gemini/models`: queries Google's live ModelService API (`https://generativelanguage.googleapis.com/v1beta/models`) using the user's configured Gemini API key, filtering for models supporting `generateContent`.
+    *   Added verified curated fallback list: `gemini-3.8-flash` (Latest Flash), `gemini-flash-latest`, `gemini-pro-latest`, `gemini-3.6-flash`, and `gemini-2.5-pro`.
+    *   Added automatic sanitization and migration in `server/index.js` and `client/src/pages/SettingsView.tsx` so any legacy/invalid model selection (`gemini-3.5-pro`, `gemini-3.8-pro`) automatically migrates to `gemini-3.8-flash`.
+    *   Added a live "Refresh" button in Settings to fetch real-time models directly from Google API.
+    *   Rebuilt client frontend assets into `server/public/`.
     *   Rebuilt and pushed the production Docker image `vivek5239/reminders-app:latest` to Docker Hub.
+    *   Pushed all commits to [`https://github.com/vivek5239/omniRemaindersV2.git`](https://github.com/vivek5239/omniRemaindersV2.git).

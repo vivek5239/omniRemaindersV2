@@ -48,6 +48,8 @@ export default function SettingsView() {
   const [showGotifyToken, setShowGotifyToken] = useState(false);
 
   const [geminiModels, setGeminiModels] = useState<GeminiModelInfo[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelSource, setModelSource] = useState<'live' | 'curated'>('curated');
 
   const [pulseData, setPulseData] = useState<PulseSummary | null>(null);
   const [loadingPulse, setLoadingPulse] = useState(false);
@@ -66,7 +68,6 @@ export default function SettingsView() {
 
   useEffect(() => {
     fetchSettings();
-    fetchGeminiModels();
   }, []);
 
   useEffect(() => {
@@ -79,33 +80,51 @@ export default function SettingsView() {
     try {
       const res = await axios.get('/api/settings');
       if (res.data) {
+        const rawModel = res.data.geminiModel;
+        const invalidModels = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+        const safeModel = (!rawModel || invalidModels.includes(rawModel))
+          ? 'gemini-3.8-flash'
+          : rawModel;
+
         setConfig(prev => ({
           ...prev,
           ...res.data,
-          geminiModel: res.data.geminiModel || 'gemini-3.8-flash'
+          geminiModel: safeModel
         }));
+
+        // Dynamically fetch models from Google if API key is present
+        fetchGeminiModels(res.data.geminiApiKey);
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
+      fetchGeminiModels();
     }
   };
 
-  const fetchGeminiModels = async () => {
+  const fetchGeminiModels = async (keyOverride?: string) => {
+    setLoadingModels(true);
     try {
-      const res = await axios.get('/api/gemini/models');
-      if (res.data?.models) {
+      const keyToUse = keyOverride !== undefined ? keyOverride : config.geminiApiKey;
+      const res = await axios.get('/api/gemini/models', {
+        params: keyToUse ? { apiKey: keyToUse } : {}
+      });
+      if (res.data?.models && Array.isArray(res.data.models)) {
         setGeminiModels(res.data.models);
+        setModelSource(res.data.source || 'curated');
       }
     } catch (err) {
       console.error('Failed to load Gemini models:', err);
-      // Fallback
+      // Clean curated fallback
       setGeminiModels([
         { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
-        { id: 'gemini-3.5-pro', name: 'Gemini 3.5 Pro', description: 'Advanced reasoning and complex schedule deduction' },
-        { id: 'gemini-3.8-pro', name: 'Gemini 3.8 Pro', description: 'Flagship reasoning model for heavy workloads' },
-        { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: 'Fast, reliable general-purpose model' },
-        { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', description: 'Ultra-fast, lightweight model' }
+        { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
+        { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' },
+        { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast, reliable production model' },
+        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Deep reasoning, coding, and complex analysis' }
       ]);
+      setModelSource('curated');
+    } finally {
+      setLoadingModels(false);
     }
   };
 
@@ -358,7 +377,25 @@ export default function SettingsView() {
 
                     <Col xs={12}>
                       <Form.Group>
-                        <Form.Label className="fw-medium small">Gemini Model</Form.Label>
+                        <div className="d-flex align-items-center justify-content-between mb-1.5">
+                          <Form.Label className="fw-medium small mb-0">Gemini Model</Form.Label>
+                          <div className="d-flex align-items-center gap-2">
+                            <Badge bg={modelSource === 'live' ? 'success' : 'secondary'} className="fw-normal" style={{ fontSize: '0.7rem' }}>
+                              {modelSource === 'live' ? 'Live Models (Google API)' : 'Curated Defaults'}
+                            </Badge>
+                            <Button 
+                              variant="link" 
+                              size="sm" 
+                              className="p-0 text-decoration-none d-flex align-items-center gap-1 text-primary small"
+                              onClick={() => fetchGeminiModels(config.geminiApiKey)}
+                              disabled={loadingModels}
+                              title="Query Google API for latest supported models"
+                            >
+                              <RefreshCw size={13} className={loadingModels ? 'spin' : ''} />
+                              <span>{loadingModels ? 'Checking...' : 'Refresh'}</span>
+                            </Button>
+                          </div>
+                        </div>
                         <Form.Select
                           value={config.geminiModel || 'gemini-3.8-flash'}
                           onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
@@ -368,9 +405,14 @@ export default function SettingsView() {
                               {m.name || m.id} {m.description ? `— ${m.description}` : ''}
                             </option>
                           ))}
+                          {config.geminiModel && !geminiModels.some(m => m.id === config.geminiModel) && (
+                            <option value={config.geminiModel}>
+                              {config.geminiModel} (Custom)
+                            </option>
+                          )}
                         </Form.Select>
                         <Form.Text className="text-muted">
-                          Recommended: <strong>gemini-3.8-flash</strong> (Latest) for ultra-fast, intelligent reminder creation.
+                          Recommended: <strong>gemini-3.8-flash</strong> (Latest) or <strong>gemini-flash-latest</strong> for ultra-fast, intelligent reminder creation.
                         </Form.Text>
                       </Form.Group>
                     </Col>

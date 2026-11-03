@@ -77,10 +77,41 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
 }
 
+function sanitizeSettings(settings) {
+  if (!settings || typeof settings !== 'object') return {};
+  const sanitized = { ...settings };
+
+  // Migrate legacy or invalid model names to gemini-3.8-flash
+  const invalidModels = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+  if (!sanitized.geminiModel || invalidModels.includes(sanitized.geminiModel)) {
+    console.log(`[Settings] Migrating model "${sanitized.geminiModel}" to "gemini-3.8-flash"`);
+    sanitized.geminiModel = 'gemini-3.8-flash';
+  }
+
+  if (sanitized.gotifyUrl) {
+    sanitized.gotifyUrl = formatGotifyUrl(sanitized.gotifyUrl);
+  }
+  if (sanitized.gotifyToken) {
+    sanitized.gotifyToken = sanitized.gotifyToken.trim();
+  }
+  if (sanitized.smtpPass) {
+    sanitized.smtpPass = sanitized.smtpPass.trim();
+  }
+  if (sanitized.geminiApiKey) {
+    sanitized.geminiApiKey = sanitized.geminiApiKey.trim();
+  }
+  return sanitized;
+}
+
 async function ensureSettingsFile() {
   try {
     const data = await fs.readFile(settingsPath, 'utf-8');
-    JSON.parse(data);
+    const parsed = JSON.parse(data);
+    const sanitized = sanitizeSettings(parsed);
+    if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
+      await fs.writeFile(settingsPath, JSON.stringify(sanitized, null, 2));
+    }
+    currentSettings = sanitized;
   } catch (e) {
     const defaultSettings = {
       geminiApiKey: process.env.GEMINI_API_KEY || '',
@@ -440,23 +471,85 @@ app.get('/api/holiday-date', async (req, res) => {
 // Gemini AI Endpoints
 // ----------------------------------------------------
 
-// List Available Gemini Models
-app.get('/api/gemini/models', (req, res) => {
-  res.json({
-    models: [
-      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
-      { id: 'gemini-3.5-pro', name: 'Gemini 3.5 Pro', description: 'Advanced reasoning and complex schedule deduction' },
-      { id: 'gemini-3.8-pro', name: 'Gemini 3.8 Pro', description: 'Flagship reasoning model for heavy workloads' },
-      { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: 'Fast, reliable general-purpose model' },
-      { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', description: 'Ultra-fast, lightweight model' }
-    ]
-  });
+const CURATED_GEMINI_MODELS = [
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest & Recommended)', description: 'Ultra-fast, state-of-the-art model for text and reminder extraction' },
+  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
+  { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast, reliable production model' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Deep reasoning, coding, and complex analysis' }
+];
+
+function sanitizeModelName(modelName) {
+  const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+  if (!modelName || invalid.includes(modelName)) {
+    return 'gemini-3.8-flash';
+  }
+  return modelName;
+}
+
+// List Available Gemini Models (dynamically fetched from Google if API key is provided)
+app.get('/api/gemini/models', async (req, res) => {
+  const apiKey = (req.query.apiKey || currentSettings.geminiApiKey || process.env.GEMINI_API_KEY || '').trim();
+
+  if (!apiKey) {
+    return res.json({ models: CURATED_GEMINI_MODELS, source: 'curated' });
+  }
+
+  try {
+    const response = await axios.get('https://generativelanguage.googleapis.com/v1beta/models', {
+      params: { key: apiKey },
+      timeout: 8000
+    });
+
+    if (response.data && Array.isArray(response.data.models)) {
+      const validModels = response.data.models
+        .filter(m => {
+          const id = (m.name || '').replace(/^models\//, '');
+          const methods = m.supportedGenerationMethods || [];
+          return (
+            methods.includes('generateContent') &&
+            !id.includes('embedding') &&
+            !id.includes('aqa') &&
+            !id.includes('imagen') &&
+            !id.includes('learnlm')
+          );
+        })
+        .map(m => {
+          const id = m.name.replace(/^models\//, '');
+          return {
+            id,
+            name: m.displayName || id,
+            description: m.description ? m.description.substring(0, 140) : 'Google Gemini model'
+          };
+        });
+
+      if (validModels.length > 0) {
+        // Prioritize gemini-3.8-flash, gemini-flash-latest, gemini-pro-latest
+        validModels.sort((a, b) => {
+          if (a.id === 'gemini-3.8-flash') return -1;
+          if (b.id === 'gemini-3.8-flash') return 1;
+          if (a.id === 'gemini-flash-latest') return -1;
+          if (b.id === 'gemini-flash-latest') return 1;
+          if (a.id === 'gemini-pro-latest') return -1;
+          if (b.id === 'gemini-pro-latest') return 1;
+          return a.id.localeCompare(b.id);
+        });
+
+        return res.json({ models: validModels, source: 'live' });
+      }
+    }
+
+    return res.json({ models: CURATED_GEMINI_MODELS, source: 'curated' });
+  } catch (error) {
+    console.warn(`[Gemini API] Failed to fetch live models from Google (${error.message}); returning curated list.`);
+    return res.json({ models: CURATED_GEMINI_MODELS, source: 'curated' });
+  }
 });
 
 // Backward compatibility for groq models route
 app.get('/api/groq/models', (req, res) => {
   res.json({
-    models: ['gemini-3.8-flash', 'gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash', 'gemini-3.5-flash-lite']
+    models: CURATED_GEMINI_MODELS.map(m => m.id)
   });
 });
 
@@ -474,7 +567,7 @@ app.post('/api/ai/create-reminder', async (req, res) => {
     return res.status(400).json({ error: 'Reminder text is required.' });
   }
 
-  const modelToUse = model || currentSettings.geminiModel || 'gemini-3.8-flash';
+  const modelToUse = sanitizeModelName(model || currentSettings.geminiModel || 'gemini-3.8-flash');
   console.log(`[Gemini AI] Processing reminder using model: ${modelToUse}`);
 
   try {
@@ -551,7 +644,8 @@ app.post('/api/ai/analyze', async (req, res) => {
 
   try {
     const reminders = await getAllReminders();
-    const modelToUse = currentSettings.geminiModel || 'gemini-3.8-flash';
+    const modelToUse = sanitizeModelName(currentSettings.geminiModel || 'gemini-3.8-flash');
+    console.log(`[Gemini AI] Analyzing reminders using model: ${modelToUse}`);
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const generativeModel = genAI.getGenerativeModel({
@@ -820,19 +914,7 @@ app.post('/api/settings', async (req, res) => {
     const oldSettings = JSON.parse(data);
 
     // Merge and sanitize
-    const newSettings = { ...oldSettings, ...req.body };
-    if (newSettings.smtpPass) {
-      newSettings.smtpPass = newSettings.smtpPass.trim();
-    }
-    if (newSettings.gotifyUrl) {
-      newSettings.gotifyUrl = formatGotifyUrl(newSettings.gotifyUrl);
-    }
-    if (newSettings.gotifyToken) {
-      newSettings.gotifyToken = newSettings.gotifyToken.trim();
-    }
-    if (newSettings.geminiApiKey) {
-      newSettings.geminiApiKey = newSettings.geminiApiKey.trim();
-    }
+    const newSettings = sanitizeSettings({ ...oldSettings, ...req.body });
 
     await fs.writeFile(settingsPath, JSON.stringify(newSettings, null, 2));
     currentSettings = newSettings;
@@ -852,7 +934,7 @@ app.get('/api/settings', async (req, res) => {
   try {
     await ensureSettingsFile();
     const data = await fs.readFile(settingsPath, 'utf-8');
-    const settings = JSON.parse(data);
+    const settings = sanitizeSettings(JSON.parse(data));
     res.json({
       ...settings,
       dailyCheckTime: settings.dailyCheckTime || '09:00',
@@ -898,6 +980,6 @@ app.listen(PORT, async () => {
   console.log(`===============================================`);
   await ensureSettingsFile();
   const data = await fs.readFile(settingsPath, 'utf-8');
-  currentSettings = JSON.parse(data);
+  currentSettings = sanitizeSettings(JSON.parse(data));
   scheduleDailyReminder();
 });

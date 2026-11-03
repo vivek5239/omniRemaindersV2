@@ -48,8 +48,15 @@ export default function Dashboard() {
         axios.get('/api/reminders'),
         axios.get('/api/settings')
       ]);
+      const settingsData = settingsRes.data;
+      if (settingsData) {
+        const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+        if (!settingsData.geminiModel || invalid.includes(settingsData.geminiModel)) {
+          settingsData.geminiModel = 'gemini-3.8-flash';
+        }
+      }
       setData(remindersRes.data);
-      setSettings(settingsRes.data);
+      setSettings(settingsData);
     } catch (err) {
       console.error("Failed to fetch initial data", err);
     } finally {
