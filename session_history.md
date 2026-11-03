@@ -90,3 +90,8 @@ This session delivered a comprehensive redesign and major functionality enhancem
 *   Enhanced persistent data directory resolution in `server/db.js` to support `process.env.DATA_DIR`, `/data` (container volume mount), `/app/data`, or local `./data`.
 *   Updated `docker-compose.deploy.yml` with `DATA_DIR=/data` and `docker-compose.yml` with `DATA_DIR=/app/data`.
 *   Verified frontend and backend builds with zero TypeScript errors and confirmed UI responsiveness and navigation with Playwright.
+
+*   **Repository Correction:**
+    *   Rolled back the accidental commit on `https://github.com/vivek5239/Subscriptions.git` back to `ef30019`.
+    *   Configured the local Git remote to point to the dedicated repository [`https://github.com/vivek5239/omniRemaindersV2.git`](https://github.com/vivek5239/omniRemaindersV2.git).
+    *   Pushed `main` to `https://github.com/vivek5239/omniRemaindersV2.git`.
