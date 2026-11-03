@@ -1,72 +1,59 @@
-# Reminders
+# OmniReminders v2.1
 
-A modern reminder management dashboard to track your recurring expenses, analyze costs, and never miss a payment.
+A modern, web-based reminder and schedule management application to track obligations, recurring bills, variable holiday events, and deadlines with Google Gemini AI intelligence, multi-channel notifications (Gotify & SMTP), and seamless integration with your HomeServer Pulse App.
 
-## Features
+## Highlights & New Features
 
-- **Dashboard**: Visual overview of Monthly/Yearly costs, Active Reminders, and Approaching Deadlines.
-- **Currency Normalization**: Automatically converts various currencies (USD, EUR, GBP) to INR for unified statistics.
-- **Smart Logos**: Automatically fetches logos for your reminders.
-- **Upcoming Payments**: Highlights payments due in the next 5 days.
-- **Docker Ready**: Easy deployment with Docker and Docker Compose.
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v18+)
-- npm
-
-### Local Development
-
-1.  **Setup Data**
-    Ensure your `reminders.json` is in the `data/` directory.
-
-2.  **Start Server**
-    ```bash
-    cd server
-    npm install
-    npm run dev
-    ```
-    Server runs on `http://localhost:5000`.
-
-3.  **Start Client**
-    ```bash
-    cd client
-    npm install
-    npm run dev
-    ```
-    Client runs on `http://localhost:5173`.
-
-### Docker Deployment
-
-To build and run the application as a single container (serving both frontend and backend):
-
-```bash
-docker-compose up --build
-```
-
-The application will be available at `http://localhost:5000`.
-
-### Building for Docker Hub
-
-To push this image to Docker Hub (e.g., for your server):
-
-```bash
-# Build the image
-docker build -t your-username/reminders:latest .
-
-# Push to Docker Hub
-docker push your-username/reminders:latest
-```
-
-## Configuration
-
-- **Data Source**: The app reads from `data/reminders.json`. This file is persisted via a Docker volume.
-- **Currency**: Default base currency is INR. Rates are currently fixed in `server/currency.js`.
+- **Modern Glassmorphism UI:** Complete redesign with responsive dark/light mode themes, animated pulse indicators, four real-time metric stat cards, and polished navigation.
+- **Google Gemini AI Integration:** Natural language reminder creation and intelligent digest analysis powered by Google Gemini AI (default: `gemini-2.5-pro`).
+- **HomeServer Pulse App REST API:** Dedicated lightweight endpoints (`/api/pulse/reminders` and `/api/pulse/health`) designed for homelab dashboards and Pulse App widgets.
+- **Reliable Push & Email Notifications:** Verified Gotify push alerts and SMTP email dispatch with automated credential whitespace trimming and live test feedback.
+- **Background Scheduler:** Automated daily check via `node-cron` with auto-updating of passing yearly holiday dates via Calendarific.
+- **Calendar & Reminders Views:** Interactive monthly calendar view and dual Table / Grid views for reminder management.
+- **Tamil Calendar Support:** Switch to Tamil calendar format (Month & Day) with automatic Gregorian conversion.
 
 ## Tech Stack
 
-- **Frontend**: React, TypeScript, Bootstrap 5, Lucide Icons.
-- **Backend**: Node.js, Express.
-- **Container**: Docker.
+- **Frontend:** React 19, TypeScript, Vite 7, Bootstrap 5, Lucide Icons, Date-fns
+- **Backend:** Node.js, Express 5, Google Generative AI SDK, Nodemailer, Axios, node-cron
+- **Storage:** File-based resilient JSON database in `/data`
+
+## HomeServer Pulse App API
+
+Integrate reminders into your HomeServer Pulse App:
+
+```bash
+# Get upcoming reminders and categorized counts (overdue, today, tomorrow, upcoming)
+curl -s "http://<server-ip>:3050/api/pulse/reminders?days=7"
+
+# Service health check
+curl -s "http://<server-ip>:3050/api/pulse/health"
+```
+
+## Getting Started
+
+### Local Development
+```bash
+# 1. Install & build client
+cd client
+npm install
+npm run build
+
+# 2. Install & run server
+cd ../server
+npm install
+node index.js
+```
+
+### Docker Deployment
+
+**Local Testing:**
+```bash
+docker-compose up -d --build
+```
+
+**Homelab Production Deployment:**
+Deploy using `docker-compose.deploy.yml` on your server:
+```bash
+docker-compose -f docker-compose.deploy.yml up -d
+```

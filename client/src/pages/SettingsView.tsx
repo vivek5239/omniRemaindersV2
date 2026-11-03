@@ -1,19 +1,26 @@
 import { useState, useEffect } from 'react';
-import { Container, Card, Form, Button, Row, Col, Stack, Alert } from 'react-bootstrap';
-import { Save, Bot, Bell, Palette, Check, Moon, Calendar } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { 
+  Container, Row, Col, Form, Button, Alert, 
+  Spinner, Badge, Nav, Tab, InputGroup 
+} from 'react-bootstrap';
+import { 
+  Save, Bell, Mail, Sparkles, Calendar, Palette, 
+  Activity, CheckCircle, AlertCircle, Copy, RefreshCw, Eye, EyeOff, Send
+} from 'lucide-react';
 import axios from 'axios';
-import type { Settings, Reminder } from '../types';
+import type { Settings, GeminiModelInfo, PulseSummary } from '../types';
 import { useTheme, type ThemeColor } from '../context/ThemeContext';
 
 export default function SettingsView() {
   const [config, setConfig] = useState<Settings>({
-    groqApiKey: '',
-    groqModel: '',
+    geminiApiKey: '',
+    geminiModel: 'gemini-2.5-pro',
     calendarificApiKey: '',
     gotifyUrl: '',
     gotifyToken: '',
     smtpHost: '',
-    smtpPort: '',
+    smtpPort: '587',
     smtpUser: '',
     smtpPass: '',
     smtpFrom: '',
@@ -22,16 +29,34 @@ export default function SettingsView() {
     dailyCheckTime: '09:00',
     lastDailyCheck: null,
   });
-  const [testing, setTesting] = useState<string | null>(null);
+
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<string>(
+    location.state?.activeTab || 'gemini'
+  );
+
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [testStatus, setTestStatus] = useState<{
+    type: 'gotify' | 'email' | 'scheduler' | 'gemini' | null;
+    state: 'loading' | 'success' | 'error' | null;
+    message: string | null;
+  }>({ type: null, state: null, message: null });
+
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
+  const [showGotifyToken, setShowGotifyToken] = useState(false);
+
+  const [geminiModels, setGeminiModels] = useState<GeminiModelInfo[]>([]);
+
+  const [pulseData, setPulseData] = useState<PulseSummary | null>(null);
+  const [loadingPulse, setLoadingPulse] = useState(false);
+  const [copiedCurl, setCopiedCurl] = useState(false);
+
   const { color, setColor, mode, toggleMode } = useTheme();
-  const [icsFile, setIcsFile] = useState<File | null>(null);
-  const [importStatus, setImportStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [importMessage, setImportMessage] = useState<string>('');
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
 
   const colors: { id: ThemeColor; value: string; label: string }[] = [
-    { id: 'purple', value: '#6366f1', label: 'Purple' },
+    { id: 'purple', value: '#6366f1', label: 'Indigo' },
     { id: 'blue', value: '#3b82f6', label: 'Blue' },
     { id: 'green', value: '#10b981', label: 'Green' },
     { id: 'orange', value: '#f97316', label: 'Orange' },
@@ -41,551 +66,796 @@ export default function SettingsView() {
 
   useEffect(() => {
     fetchSettings();
-    fetchGroqModels();
+    fetchGeminiModels();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'pulse') {
+      fetchPulseSummary();
+    }
+  }, [activeTab]);
 
   const fetchSettings = async () => {
     try {
       const res = await axios.get('/api/settings');
-      if (res.data && Object.keys(res.data).length > 0) {
-        setConfig(prev => ({ ...prev, ...res.data }));
+      if (res.data) {
+        setConfig(prev => ({
+          ...prev,
+          ...res.data,
+          geminiModel: res.data.geminiModel || 'gemini-2.5-pro'
+        }));
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load settings:', err);
     }
   };
 
-  const fetchGroqModels = async () => {
-    setFetchingModels(true);
+  const fetchGeminiModels = async () => {
     try {
-      const res = await axios.get('/api/groq/models');
-      setAvailableModels(res.data.models);
+      const res = await axios.get('/api/gemini/models');
+      if (res.data?.models) {
+        setGeminiModels(res.data.models);
+      }
     } catch (err) {
-      console.error('Error fetching Groq models:', err);
-      // Optionally show an alert or message to the user
-    } finally {
-      setFetchingModels(false);
+      console.error('Failed to load Gemini models:', err);
+      // Fallback
+      setGeminiModels([
+        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Recommended)', description: 'Most capable model' },
+        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast and responsive' },
+        { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Advanced reasoning' },
+        { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Lightweight' }
+      ]);
     }
   };
 
-  const handleSave = async () => {
+  const fetchPulseSummary = async () => {
+    setLoadingPulse(true);
+    try {
+      const res = await axios.get('/api/pulse/reminders?days=7');
+      setPulseData(res.data);
+    } catch (err) {
+      console.error('Failed to load Pulse data:', err);
+    } finally {
+      setLoadingPulse(false);
+    }
+  };
+
+  const handleSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSaving(true);
+    setSaveSuccess(false);
     try {
       await axios.post('/api/settings', config);
-      localStorage.setItem('rem_app_config', JSON.stringify(config));
-      alert('Settings saved successfully!');
-    } catch (err) {
-      alert('Error saving settings');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 4000);
+    } catch (err: any) {
+      alert('Error saving settings: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSaving(false);
     }
   };
 
   const testGotify = async () => {
-    setTesting('gotify');
+    setTestStatus({ type: 'gotify', state: 'loading', message: null });
     try {
-      await axios.post('/api/test/gotify', config);
-      alert('Test notification sent!');
+      const res = await axios.post('/api/test/gotify', config);
+      setTestStatus({
+        type: 'gotify',
+        state: 'success',
+        message: res.data.message || 'Test notification sent to Gotify successfully!'
+      });
     } catch (err: any) {
-      alert('Error: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setTesting(null);
+      setTestStatus({
+        type: 'gotify',
+        state: 'error',
+        message: err.response?.data?.error || err.message || 'Failed to send Gotify notification'
+      });
     }
   };
 
   const testEmail = async () => {
-    setTesting('email');
+    setTestStatus({ type: 'email', state: 'loading', message: null });
     try {
-      await axios.post('/api/test/email', config);
-      alert('Test email sent!');
+      const res = await axios.post('/api/test/email', config);
+      setTestStatus({
+        type: 'email',
+        state: 'success',
+        message: res.data.message || 'Test email sent successfully!'
+      });
     } catch (err: any) {
-      alert('Error: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setTesting(null);
+      setTestStatus({
+        type: 'email',
+        state: 'error',
+        message: err.response?.data?.error || err.message || 'Failed to send test email'
+      });
     }
   };
 
   const triggerDailyCheck = async () => {
-    setTesting('reminders');
+    setTestStatus({ type: 'scheduler', state: 'loading', message: null });
     try {
       const res = await axios.post('/api/test/reminders');
-      alert(res.data.message);
+      setTestStatus({
+        type: 'scheduler',
+        state: 'success',
+        message: res.data.message
+      });
+      fetchSettings();
     } catch (err: any) {
-      alert('Error: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setTesting(null);
+      setTestStatus({
+        type: 'scheduler',
+        state: 'error',
+        message: err.response?.data?.error || err.message || 'Daily check failed'
+      });
     }
   };
 
-  const handleIcsFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setIcsFile(e.target.files[0]);
-      setImportStatus('idle');
-      setImportMessage('');
-    }
-  };
-
-  const parseIcsContent = (icsContent: string): Reminder[] => {
-    const reminders: Reminder[] = [];
-    const events = icsContent.split('BEGIN:VEVENT');
-
-    events.forEach(event => {
-      if (event.includes('END:VEVENT')) {
-        const summaryMatch = event.match(/SUMMARY:(.*)/);
-        const dtstartMatch = event.match(/DTSTART(?:;TZID=[^:]+)?:(\d{8}(?:T\d{6})?)/);
-        const descriptionMatch = event.match(/DESCRIPTION:(.*)/);
-
-        if (summaryMatch && dtstartMatch) {
-          const name = summaryMatch[1].trim();
-          const dtStart = dtstartMatch[1];
-          const nextPayment = dtStart.length === 8 
-                  ? `${dtStart.substring(0, 4)}-${dtStart.substring(4, 6)}-${dtStart.substring(6, 8)}` 
-                  : (() => {
-                      // Convert YYYYMMDDTHHMMSS to YYYY-MM-DDTHH:MM:SS for reliable Date parsing
-                      const year = dtStart.substring(0, 4);
-                      const month = dtStart.substring(4, 6);
-                      const day = dtStart.substring(6, 8);
-                      const time = dtStart.substring(9, 15); // HHMMSS part
-                      const formattedTime = `${time.substring(0, 2)}:${time.substring(2, 4)}:${time.substring(4, 6)}`;
-                      const isoDateString = `${year}-${month}-${day}T${formattedTime}`;
-                      return new Date(isoDateString).toISOString().split('T')[0];
-                    })();
-          const notes = descriptionMatch ? descriptionMatch[1].trim() : '';
-
-          reminders.push({
-            id: '', // Will be generated by backend
-            Name: name,
-            'Next Payment': nextPayment,
-            Category: 'Imported',
-            Active: 'Yes',
-            Notes: notes,
-            remindBefore: 0, // Default to remind on the day
-            Source: 'API',
-          });
-        }
-      }
-    });
-    return reminders;
-  };
-
-  const handleImportIcs = async () => {
-    if (!icsFile) {
-      setImportStatus('error');
-      setImportMessage('Please select an .ics file to import.');
-      return;
-    }
-
-    setImportStatus('loading');
-    setImportMessage('Importing...');
-
-    try {
-      const fileContent = await icsFile.text();
-      const parsedReminders = parseIcsContent(fileContent);
-
-      if (parsedReminders.length === 0) {
-        setImportStatus('error');
-        setImportMessage('No events found in the .ics file or failed to parse.');
-        return;
-      }
-
-      for (const reminder of parsedReminders) {
-        await axios.post('/api/reminders', reminder);
-      }
-
-      setImportStatus('success');
-      setImportMessage(`Successfully imported ${parsedReminders.length} reminders!`);
-      setIcsFile(null); // Clear file input
-      // Optionally refresh reminders view, but not required for settings page
-    } catch (error: any) {
-      console.error('Error importing .ics file:', error);
-      setImportStatus('error');
-      setImportMessage(`Error importing .ics file: ${error.message}`);
-    }
+  const copyPulseCurl = () => {
+    const host = window.location.origin;
+    const curlCommand = `curl -s "${host}/api/pulse/reminders?days=7"`;
+    navigator.clipboard.writeText(curlCommand);
+    setCopiedCurl(true);
+    setTimeout(() => setCopiedCurl(false), 2500);
   };
 
   return (
-    <Container className="py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h4 className="mb-0 fw-bold">Settings</h4>
-        <Button 
-          variant="outline-primary" 
-          onClick={triggerDailyCheck} 
-          disabled={!!testing}
-          className="rounded-pill px-4 shadow-sm"
+    <Container fluid="xl" className="py-4 px-3 px-sm-4">
+      {/* Header and Global Save */}
+      <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+        <div>
+          <h2 className="fw-bold mb-1 tracking-tight">Settings & Integrations</h2>
+          <p className="text-muted mb-0 small">
+            Configure Gemini AI, Gotify notifications, SMTP email, daily scheduler, and HomeServer Pulse API.
+          </p>
+        </div>
+
+        <Button
+          variant="primary"
+          className="rounded-pill d-flex align-items-center gap-2 px-4 py-2 fw-medium shadow-sm hover-lift"
+          onClick={handleSave}
+          disabled={saving}
         >
-          {testing === 'reminders' ? 'Checking...' : 'Run Daily Check Now'}
+          {saving ? <Spinner size="sm" animation="border" /> : <Save size={16} />}
+          <span>{saving ? 'Saving...' : 'Save All Settings'}</span>
         </Button>
       </div>
-      
-      <Form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
-        {/* Master Notification Toggle */}
-        <Card className="shadow-sm mb-4 border-primary border-opacity-25">
-          <Card.Body className="py-3 d-flex justify-content-between align-items-center">
-            <div className="d-flex align-items-center gap-3">
-              <div className="bg-primary bg-opacity-10 p-2 rounded">
-                <Bell className="text-primary" size={24} />
-              </div>
-              <div>
-                <h6 className="mb-0 fw-bold">Daily Reminders</h6>
-                <small className="text-muted">Send notifications for reminders due in the next 3 days.</small>
-              </div>
-            </div>
-            <Form.Check 
-              type="switch"
-              id="notifications-enabled"
-              checked={config.notificationsEnabled}
-              onChange={(e) => setConfig({...config, notificationsEnabled: e.target.checked})}
-              className="fs-4"
-            />
-          </Card.Body>
-        </Card>
 
-        {/* Scheduler Settings */}
-        <Card className="shadow-sm mb-4">
-          <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex align-items-center gap-2">
-            <Bot className="text-primary" size={20} />
-            <h6 className="mb-0 fw-bold">Scheduler</h6>
-          </Card.Header>
-          <Card.Body>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Daily Check Time</Form.Label>
-                  <Form.Control 
-                    type="time" 
-                    value={config.dailyCheckTime}
-                    onChange={(e) => setConfig({...config, dailyCheckTime: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                  <Form.Text className="text-muted">
-                    The time of day to run the daily reminder check.
-                  </Form.Text>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Last Run</Form.Label>
-                  <p className="form-control-plaintext">
-                    {config.lastDailyCheck 
-                      ? new Date(config.lastDailyCheck).toLocaleString() 
-                      : 'Never'}
-                  </p>
-                </Form.Group>
-              </Col>
-            </Row>
-          </Card.Body>
-        </Card>
+      {saveSuccess && (
+        <Alert variant="success" className="d-flex align-items-center gap-2 shadow-sm border-0 mb-4">
+          <CheckCircle size={18} className="text-success" />
+          <span>Settings saved successfully and scheduler updated!</span>
+        </Alert>
+      )}
 
-        {/* Groq AI Settings */}
-        <Card className="shadow-sm mb-4">
-          <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex align-items-center gap-2">
-            <Bot className="text-primary" size={20} />
-            <h6 className="mb-0 fw-bold">Groq AI</h6>
-          </Card.Header>
-          <Card.Body>
-            <Form.Group className="mb-3">
-              <Form.Label>Groq API Key</Form.Label>
-              <Form.Control 
-                type="password" 
-                placeholder="Enter your Groq API Key"
-                value={config.groqApiKey}
-                onChange={(e) => setConfig({...config, groqApiKey: e.target.value})}
-                className="bg-body border-secondary border-opacity-25"
-              />
-              <Form.Text className="text-muted">
-                Used for generating reminder insights and for natural language reminder creation.
-              </Form.Text>
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Groq AI Model</Form.Label>
-              <Form.Select 
-                value={config.groqModel || ''} // Handle undefined
-                onChange={(e) => setConfig({...config, groqModel: e.target.value})}
-                className="bg-body border-secondary border-opacity-25"
-                disabled={fetchingModels} // Disable while loading models
-              >
-                <option value="">
-                  {fetchingModels ? 'Loading models...' : 'Use default model (llama3-70b-8192)'}
-                </option>
-                {availableModels.map(model => (
-                  <option key={model} value={model}>{model}</option>
-                ))}
-              </Form.Select>
-              <Form.Text className="text-muted">
-                Select a specific model or leave blank to use the recommended default.
-              </Form.Text>
-            </Form.Group>
-                                  </Card.Body>
-                                </Card>
-                      
-                                {/* Holiday API Settings (Calendarific) */}
-                                <Card className="shadow-sm mb-4">
-                                  <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex align-items-center gap-2">
-                                    <Calendar className="text-success" size={20} />
-                                    <h6 className="mb-0 fw-bold">Holiday API (Calendarific)</h6>
-                                  </Card.Header>
-                                  <Card.Body>
-                                    <Form.Group className="mb-3">
-                                      <Form.Label>Calendarific API Key</Form.Label>
-                                      <Form.Control 
-                                        type="password" 
-                                        placeholder="Enter your Calendarific API Key"
-                                        value={config.calendarificApiKey}
-                                        onChange={(e) => setConfig({...config, calendarificApiKey: e.target.value})}
-                                        className="bg-body border-secondary border-opacity-25"
-                                      />
-                                      <Form.Text className="text-muted">
-                                        Used to get accurate dates for holidays like Diwali, correcting AI suggestions.
-                                        Get a key from <a href="https://calendarific.com/" target="_blank" rel="noopener noreferrer">calendarific.com</a>.
-                                      </Form.Text>
-                                    </Form.Group>
-                                  </Card.Body>
-                                </Card>
-                      
-                                {/* Gotify Settings */}
-                                <Card className="shadow-sm mb-4">          <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex justify-content-between align-items-center">
-            <div className="d-flex align-items-center gap-2">
-              <Bell className="text-warning" size={20} />
-              <h6 className="mb-0 fw-bold">Notifications (Gotify)</h6>
-            </div>
-            <Button 
-              variant="outline-warning" 
-              size="sm" 
-              onClick={testGotify} 
-              disabled={!!testing}
-              className="rounded-pill"
-            >
-              {testing === 'gotify' ? 'Testing...' : 'Test Gotify'}
-            </Button>
-          </Card.Header>
-          <Card.Body>
-            <Row>
-              <Col md={8}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Gotify Server URL</Form.Label>
-                  <Form.Control 
-                    type="url" 
-                    placeholder="https://gotify.example.com"
-                    value={config.gotifyUrl}
-                    onChange={(e) => setConfig({...config, gotifyUrl: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group className="mb-3">
-                  <Form.Label>App Token</Form.Label>
-                  <Form.Control 
-                    type="password" 
-                    placeholder="Enter Token"
-                    value={config.gotifyToken}
-                    onChange={(e) => setConfig({...config, gotifyToken: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-          </Card.Body>
-        </Card>
-
-        {/* Email Settings */}
-        <Card className="shadow-sm mb-4">
-          <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex justify-content-between align-items-center">
-            <div className="d-flex align-items-center gap-2">
-              <Bell className="text-danger" size={20} />
-              <h6 className="mb-0 fw-bold">Email Notifications (SMTP)</h6>
-            </div>
-            <Button 
-              variant="outline-danger" 
-              size="sm" 
-              onClick={testEmail} 
-              disabled={!!testing}
-              className="rounded-pill"
-            >
-              {testing === 'email' ? 'Testing...' : 'Test Email'}
-            </Button>
-          </Card.Header>
-          <Card.Body>
-            <Row>
-              <Col md={8}>
-                <Form.Group className="mb-3">
-                  <Form.Label>SMTP Host</Form.Label>
-                  <Form.Control 
-                    type="text" 
-                    placeholder="smtp.gmail.com"
-                    value={config.smtpHost}
-                    onChange={(e) => setConfig({...config, smtpHost: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={4}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Port</Form.Label>
-                  <Form.Control 
-                    type="text" 
-                    placeholder="587"
-                    value={config.smtpPort}
-                    onChange={(e) => setConfig({...config, smtpPort: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Username / Email</Form.Label>
-                  <Form.Control 
-                    type="email" 
-                    placeholder="user@example.com"
-                    value={config.smtpUser}
-                    onChange={(e) => setConfig({...config, smtpUser: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Password / App Password</Form.Label>
-                  <Form.Control 
-                    type="password" 
-                    placeholder="Enter Password"
-                    value={config.smtpPass}
-                    onChange={(e) => setConfig({...config, smtpPass: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label>From Address (Optional)</Form.Label>
-                  <Form.Control 
-                    type="email" 
-                    placeholder="no-reply@example.com"
-                    value={config.smtpFrom}
-                    onChange={(e) => setConfig({...config, smtpFrom: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
-            <Row>
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Test Recipient Email</Form.Label>
-                  <Form.Control 
-                    type="email" 
-                    placeholder="recipient@outlook.com"
-                    value={config.testRecipient}
-                    onChange={(e) => setConfig({...config, testRecipient: e.target.value})}
-                    className="bg-body border-secondary border-opacity-25"
-                  />
-                  <Form.Text className="text-muted">
-                    Test emails will be sent here instead of your SMTP username.
-                  </Form.Text>
-                </Form.Group>
-              </Col>
-            </Row>
-          </Card.Body>
-        </Card>
-
-        {/* Appearance Settings */}
-        <Card className="shadow-sm mb-4">
-          <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex align-items-center gap-2">
-            <Palette className="text-primary" size={20} />
-            <h6 className="mb-0 fw-bold">Appearance</h6>
-          </Card.Header>
-          <Card.Body>
-            <Form.Group className="mb-4">
-              <Form.Label className="d-flex align-items-center gap-2">
-                <Moon size={16} className="text-muted" /> Theme Mode
-              </Form.Label>
-              <Form.Check 
-                type="switch"
-                id="dark-mode-switch"
-                label={mode === 'dark' ? 'Dark Mode' : 'Light Mode'}
-                checked={mode === 'dark'}
-                onChange={toggleMode}
-                className="fs-5"
-              />
-            </Form.Group>
-
-            <Form.Group>
-              <Form.Label>Accent Color</Form.Label>
-              <div className="d-flex gap-3 flex-wrap">
-                {colors.map((c) => (
-                  <div 
-                    key={c.id}
-                    onClick={() => setColor(c.id)}
-                    className="rounded-circle d-flex align-items-center justify-content-center transition-all position-relative"
-                    style={{ 
-                      width: 40, 
-                      height: 40, 
-                      backgroundColor: c.value,
-                      cursor: 'pointer',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                      transform: color === c.id ? 'scale(1.1)' : 'scale(1)',
-                      border: color === c.id ? `3px solid var(--bs-body-bg)` : 'none',
-                      outline: color === c.id ? `2px solid ${c.value}` : 'none',
-                    }}
-                    title={c.label}
+      {/* Tabs Container */}
+      <Tab.Container activeKey={activeTab} onSelect={(k) => setActiveTab(k || 'gemini')}>
+        <Row className="g-4">
+          {/* Navigation Sidebar */}
+          <Col lg={3}>
+            <div className="glass-panel p-2">
+              <Nav variant="pills" className="flex-column gap-1">
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="gemini" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
                   >
-                     {color === c.id && <Check size={20} className="text-white" />}
+                    <Sparkles size={18} className="text-primary" />
+                    <span>Gemini AI</span>
+                  </Nav.Link>
+                </Nav.Item>
+
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="notifications" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
+                  >
+                    <Bell size={18} className="text-warning" />
+                    <span>Gotify Push</span>
+                  </Nav.Link>
+                </Nav.Item>
+
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="email" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
+                  >
+                    <Mail size={18} className="text-info" />
+                    <span>Email (SMTP)</span>
+                  </Nav.Link>
+                </Nav.Item>
+
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="scheduler" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
+                  >
+                    <Calendar size={18} className="text-success" />
+                    <span>Daily Scheduler</span>
+                  </Nav.Link>
+                </Nav.Item>
+
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="pulse" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
+                  >
+                    <Activity size={18} className="text-danger" />
+                    <span>HomeServer Pulse API</span>
+                    <Badge bg="danger" className="ms-auto" style={{ fontSize: '0.65rem' }}>API</Badge>
+                  </Nav.Link>
+                </Nav.Item>
+
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="holiday" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
+                  >
+                    <Sparkles size={18} className="text-secondary" />
+                    <span>Holiday API</span>
+                  </Nav.Link>
+                </Nav.Item>
+
+                <Nav.Item>
+                  <Nav.Link 
+                    eventKey="appearance" 
+                    className="d-flex align-items-center gap-2.5 rounded-3 py-2.5 px-3 fw-medium cursor-pointer"
+                  >
+                    <Palette size={18} className="text-purple" />
+                    <span>Appearance</span>
+                  </Nav.Link>
+                </Nav.Item>
+              </Nav>
+            </div>
+          </Col>
+
+          {/* Content Pane */}
+          <Col lg={9}>
+            <Tab.Content>
+              {/* TAB 1: Gemini AI */}
+              <Tab.Pane eventKey="gemini">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center justify-content-between pb-3 mb-4 border-bottom">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="p-2 rounded-3 bg-primary text-white">
+                        <Sparkles size={20} />
+                      </div>
+                      <div>
+                        <h5 className="mb-0 fw-bold">Google Gemini AI Configuration</h5>
+                        <div className="text-muted small">Powers natural language reminder creation and intelligent insights.</div>
+                      </div>
+                    </div>
+                    {config.geminiApiKey ? (
+                      <Badge bg="success" className="rounded-pill px-3 py-1.5 fw-normal">Configured</Badge>
+                    ) : (
+                      <Badge bg="secondary" className="rounded-pill px-3 py-1.5 fw-normal">Key Needed</Badge>
+                    )}
                   </div>
-                ))}
-              </div>
-            </Form.Group>
-          </Card.Body>
-        </Card>
 
-        {/* Calendar Import Settings */}
-        <Card className="shadow-sm mb-4">
-          <Card.Header className="bg-transparent py-3 border-bottom-0 d-flex align-items-center gap-2">
-            <Calendar className="text-primary" size={20} />
-            <h6 className="mb-0 fw-bold">Calendar Import</h6>
-          </Card.Header>
-          <Card.Body>
-            <p className="text-muted">
-              Import events from your favorite calendar services to quickly turn them into reminders.
-            </p>
-            {importStatus !== 'idle' && (
-              <Alert variant={importStatus === 'success' ? 'success' : 'danger'} className="mb-3">
-                {importMessage}
-              </Alert>
-            )}
-            <Stack gap={3}>
-              <Button variant="outline-secondary" onClick={() => alert('Google Calendar Import: Not yet implemented.')}>Import from Google Calendar</Button>
-              <Button variant="outline-secondary" onClick={() => alert('Outlook Calendar Import: Not yet implemented.')}>Import from Outlook Calendar</Button>
-              
-              <Form.Group>
-                <Form.Label>Import from .ics file</Form.Label>
-                <Form.Control type="file" accept=".ics" onChange={handleIcsFileChange} />
-                {icsFile && (
-                  <Button 
-                    variant="primary" 
-                    className="mt-2" 
-                    onClick={handleImportIcs}
-                    disabled={importStatus === 'loading'}
-                  >
-                    {importStatus === 'loading' ? 'Importing...' : 'Upload & Import'}
-                  </Button>
-                )}
-              </Form.Group>
-            </Stack>
-            <hr />
-            <p className="small text-muted mb-0">
-              <strong>Information Required:</strong> To import from Google or Outlook, you will be asked to grant this application read-only access to your calendar events. We will not store your login credentials. We will only process the events you choose to import and will not modify your calendar in any way.
-            </p>
-          </Card.Body>
-        </Card>
+                  <Row className="g-3">
+                    <Col xs={12}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Gemini API Key *</Form.Label>
+                        <InputGroup>
+                          <Form.Control
+                            type={showGeminiKey ? 'text' : 'password'}
+                            placeholder="Enter your Google Gemini API Key (e.g. AIzaSy...)"
+                            value={config.geminiApiKey || ''}
+                            onChange={(e) => setConfig({ ...config, geminiApiKey: e.target.value })}
+                          />
+                          <Button 
+                            variant="outline-secondary" 
+                            onClick={() => setShowGeminiKey(!showGeminiKey)}
+                          >
+                            {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </Button>
+                        </InputGroup>
+                        <Form.Text className="text-muted">
+                          Get your API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">Google AI Studio</a>.
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
 
-        <div className="d-flex justify-content-end">
-          <Button variant="primary" type="submit" className="d-flex align-items-center gap-2 px-4 rounded-pill shadow-sm">
-            <Save size={18} /> Save Settings
-          </Button>
-        </div>
-      </Form>
+                    <Col xs={12}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Gemini Model</Form.Label>
+                        <Form.Select
+                          value={config.geminiModel || 'gemini-2.5-pro'}
+                          onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
+                        >
+                          {geminiModels.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.name || m.id} {m.description ? `— ${m.description}` : ''}
+                            </option>
+                          ))}
+                        </Form.Select>
+                        <Form.Text className="text-muted">
+                          Recommended: <strong>gemini-2.5-pro</strong> for optimal reasoning with recurring schedules and holiday inference.
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </div>
+              </Tab.Pane>
+
+              {/* TAB 2: Gotify Push Notifications */}
+              <Tab.Pane eventKey="notifications">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center justify-content-between pb-3 mb-4 border-bottom">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="p-2 rounded-3 bg-warning text-dark">
+                        <Bell size={20} />
+                      </div>
+                      <div>
+                        <h5 className="mb-0 fw-bold">Gotify Push Notifications</h5>
+                        <div className="text-muted small">Deliver push alerts directly to your phone, desktop, or Gotify client.</div>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="outline-warning"
+                      size="sm"
+                      className="rounded-pill d-flex align-items-center gap-1.5 px-3 py-1.5 fw-medium"
+                      onClick={testGotify}
+                      disabled={testStatus.type === 'gotify' && testStatus.state === 'loading'}
+                    >
+                      {testStatus.type === 'gotify' && testStatus.state === 'loading' ? (
+                        <Spinner size="sm" animation="border" />
+                      ) : (
+                        <Send size={14} />
+                      )}
+                      <span>Test Gotify</span>
+                    </Button>
+                  </div>
+
+                  {/* Test feedback banner */}
+                  {testStatus.type === 'gotify' && testStatus.message && (
+                    <Alert 
+                      variant={testStatus.state === 'success' ? 'success' : 'danger'} 
+                      className="d-flex align-items-center gap-2 py-2 mb-4 shadow-sm"
+                    >
+                      {testStatus.state === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                      <span>{testStatus.message}</span>
+                    </Alert>
+                  )}
+
+                  <Row className="g-3">
+                    <Col xs={12}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Gotify Server URL *</Form.Label>
+                        <Form.Control
+                          type="text"
+                          placeholder="e.g., https://gotify.example.com or http://gotify:80"
+                          value={config.gotifyUrl || ''}
+                          onChange={(e) => setConfig({ ...config, gotifyUrl: e.target.value })}
+                        />
+                        <Form.Text className="text-muted">
+                          If running in Docker on the same homelab network, you can use <code>http://gotify:80</code> or your public domain <code>https://gotify.rvitservices.uk</code>.
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+
+                    <Col xs={12}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Gotify Application Token *</Form.Label>
+                        <InputGroup>
+                          <Form.Control
+                            type={showGotifyToken ? 'text' : 'password'}
+                            placeholder="e.g., AlQEx4NFqRSl7SO"
+                            value={config.gotifyToken || ''}
+                            onChange={(e) => setConfig({ ...config, gotifyToken: e.target.value })}
+                          />
+                          <Button 
+                            variant="outline-secondary" 
+                            onClick={() => setShowGotifyToken(!showGotifyToken)}
+                          >
+                            {showGotifyToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </Button>
+                        </InputGroup>
+                        <Form.Text className="text-muted">
+                          Create an Application in your Gotify Web UI (under Apps) and paste the token here.
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </div>
+              </Tab.Pane>
+
+              {/* TAB 3: Email (SMTP) */}
+              <Tab.Pane eventKey="email">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center justify-content-between pb-3 mb-4 border-bottom">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="p-2 rounded-3 bg-info text-white">
+                        <Mail size={20} />
+                      </div>
+                      <div>
+                        <h5 className="mb-0 fw-bold">Email Notifications (SMTP)</h5>
+                        <div className="text-muted small">Receive formatted summary emails for due and upcoming obligations.</div>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="outline-info"
+                      size="sm"
+                      className="rounded-pill d-flex align-items-center gap-1.5 px-3 py-1.5 fw-medium"
+                      onClick={testEmail}
+                      disabled={testStatus.type === 'email' && testStatus.state === 'loading'}
+                    >
+                      {testStatus.type === 'email' && testStatus.state === 'loading' ? (
+                        <Spinner size="sm" animation="border" />
+                      ) : (
+                        <Send size={14} />
+                      )}
+                      <span>Test Email</span>
+                    </Button>
+                  </div>
+
+                  {/* Test feedback banner */}
+                  {testStatus.type === 'email' && testStatus.message && (
+                    <Alert 
+                      variant={testStatus.state === 'success' ? 'success' : 'danger'} 
+                      className="d-flex align-items-center gap-2 py-2 mb-4 shadow-sm"
+                    >
+                      {testStatus.state === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                      <span>{testStatus.message}</span>
+                    </Alert>
+                  )}
+
+                  <Row className="g-3">
+                    <Col md={8}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">SMTP Host *</Form.Label>
+                        <Form.Control
+                          type="text"
+                          placeholder="smtp.gmail.com"
+                          value={config.smtpHost || ''}
+                          onChange={(e) => setConfig({ ...config, smtpHost: e.target.value })}
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={4}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Port *</Form.Label>
+                        <Form.Control
+                          type="text"
+                          placeholder="587"
+                          value={config.smtpPort || '587'}
+                          onChange={(e) => setConfig({ ...config, smtpPort: e.target.value })}
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Username / Email *</Form.Label>
+                        <Form.Control
+                          type="email"
+                          placeholder="user@gmail.com"
+                          value={config.smtpUser || ''}
+                          onChange={(e) => setConfig({ ...config, smtpUser: e.target.value })}
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Password / App Password *</Form.Label>
+                        <InputGroup>
+                          <Form.Control
+                            type={showSmtpPass ? 'text' : 'password'}
+                            placeholder="16-character App Password"
+                            value={config.smtpPass || ''}
+                            onChange={(e) => setConfig({ ...config, smtpPass: e.target.value })}
+                          />
+                          <Button 
+                            variant="outline-secondary" 
+                            onClick={() => setShowSmtpPass(!showSmtpPass)}
+                          >
+                            {showSmtpPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </Button>
+                        </InputGroup>
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">From Address (Optional)</Form.Label>
+                        <Form.Control
+                          type="email"
+                          placeholder="no-reply@example.com"
+                          value={config.smtpFrom || ''}
+                          onChange={(e) => setConfig({ ...config, smtpFrom: e.target.value })}
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Test Recipient Email</Form.Label>
+                        <Form.Control
+                          type="email"
+                          placeholder="your-personal@email.com"
+                          value={config.testRecipient || ''}
+                          onChange={(e) => setConfig({ ...config, testRecipient: e.target.value })}
+                        />
+                        <Form.Text className="text-muted">Test emails will be delivered here.</Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </div>
+              </Tab.Pane>
+
+              {/* TAB 4: Daily Scheduler */}
+              <Tab.Pane eventKey="scheduler">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center justify-content-between pb-3 mb-4 border-bottom">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="p-2 rounded-3 bg-success text-white">
+                        <Calendar size={20} />
+                      </div>
+                      <div>
+                        <h5 className="mb-0 fw-bold">Daily Reminders Scheduler</h5>
+                        <div className="text-muted small">Runs automated background checks to dispatch notifications.</div>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="outline-success"
+                      size="sm"
+                      className="rounded-pill d-flex align-items-center gap-1.5 px-3 py-1.5 fw-medium"
+                      onClick={triggerDailyCheck}
+                      disabled={testStatus.type === 'scheduler' && testStatus.state === 'loading'}
+                    >
+                      {testStatus.type === 'scheduler' && testStatus.state === 'loading' ? (
+                        <Spinner size="sm" animation="border" />
+                      ) : (
+                        <RefreshCw size={14} />
+                      )}
+                      <span>Run Daily Check Now</span>
+                    </Button>
+                  </div>
+
+                  {/* Scheduler feedback banner */}
+                  {testStatus.type === 'scheduler' && testStatus.message && (
+                    <Alert 
+                      variant={testStatus.state === 'success' ? 'success' : 'danger'} 
+                      className="d-flex align-items-center gap-2 py-2 mb-4 shadow-sm"
+                    >
+                      {testStatus.state === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                      <span>{testStatus.message}</span>
+                    </Alert>
+                  )}
+
+                  <Row className="g-3">
+                    <Col xs={12}>
+                      <div className="p-3 rounded-3 border bg-body-tertiary d-flex align-items-center justify-content-between">
+                        <div>
+                          <div className="fw-medium">Enable Daily Reminders</div>
+                          <div className="text-muted small">Sends Gotify push and email notifications for items due within their reminder window.</div>
+                        </div>
+                        <Form.Check
+                          type="switch"
+                          id="notif-enabled-switch"
+                          checked={config.notificationsEnabled}
+                          onChange={(e) => setConfig({ ...config, notificationsEnabled: e.target.checked })}
+                          style={{ fontSize: '1.25rem' }}
+                        />
+                      </div>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Daily Check Time (Asia/Kolkata)</Form.Label>
+                        <Form.Control
+                          type="time"
+                          value={config.dailyCheckTime || '09:00'}
+                          onChange={(e) => setConfig({ ...config, dailyCheckTime: e.target.value })}
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Last Scheduled Check</Form.Label>
+                        <Form.Control
+                          type="text"
+                          readOnly
+                          disabled
+                          value={config.lastDailyCheck ? new Date(config.lastDailyCheck).toLocaleString() : 'Never run'}
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </div>
+              </Tab.Pane>
+
+              {/* TAB 5: HomeServer Pulse API Integration */}
+              <Tab.Pane eventKey="pulse">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center justify-content-between pb-3 mb-4 border-bottom">
+                    <div className="d-flex align-items-center gap-2">
+                      <div className="p-2 rounded-3 bg-danger text-white">
+                        <Activity size={20} />
+                      </div>
+                      <div>
+                        <h5 className="mb-0 fw-bold">HomeServer Pulse App API</h5>
+                        <div className="text-muted small">
+                          REST endpoints designed specifically for homelab widgets, dashboard monitors, and Pulse integrations.
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      className="rounded-pill d-flex align-items-center gap-1.5 px-3 py-1.5 fw-medium"
+                      onClick={fetchPulseSummary}
+                      disabled={loadingPulse}
+                    >
+                      <RefreshCw size={14} className={loadingPulse ? 'spin' : ''} />
+                      <span>Refresh Live API</span>
+                    </Button>
+                  </div>
+
+                  {/* Endpoints Documentation */}
+                  <div className="mb-4">
+                    <h6 className="fw-bold mb-2">Available Endpoints:</h6>
+                    
+                    <div className="d-flex flex-column gap-2">
+                      <div className="p-3 rounded-3 border bg-body-tertiary">
+                        <div className="d-flex align-items-center gap-2 mb-1">
+                          <Badge bg="success" className="px-2 py-1">GET</Badge>
+                          <code className="fw-bold">/api/pulse/reminders?days=7&status=active</code>
+                        </div>
+                        <p className="text-muted small mb-0">
+                          Returns categorized reminders summary: <code>counts</code>, <code>nextUpcoming</code>, <code>dueToday</code>, <code>dueTomorrow</code>, <code>overdue</code>, and <code>upcoming</code> items.
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-3 border bg-body-tertiary">
+                        <div className="d-flex align-items-center gap-2 mb-1">
+                          <Badge bg="success" className="px-2 py-1">GET</Badge>
+                          <code className="fw-bold">/api/pulse/health</code>
+                        </div>
+                        <p className="text-muted small mb-0">
+                          Health check endpoint returning uptime, active reminder counts, and notification configuration statuses.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* cURL Snippet */}
+                  <div className="mb-4">
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="fw-semibold small">Sample cURL Command:</span>
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        className="p-0 text-decoration-none d-flex align-items-center gap-1"
+                        onClick={copyPulseCurl}
+                      >
+                        <Copy size={13} />
+                        <span>{copiedCurl ? 'Copied!' : 'Copy cURL'}</span>
+                      </Button>
+                    </div>
+                    <pre className="p-3 rounded-3 bg-dark text-light small mb-0 overflow-auto">
+                      {`curl -X GET "${window.location.origin}/api/pulse/reminders?days=7"`}
+                    </pre>
+                  </div>
+
+                  {/* Live JSON Preview */}
+                  <div>
+                    <h6 className="fw-bold mb-2">Live API Response Preview:</h6>
+                    {loadingPulse ? (
+                      <div className="text-center py-4 text-muted">
+                        <Spinner size="sm" animation="border" className="me-2" />
+                        Fetching live data from /api/pulse/reminders...
+                      </div>
+                    ) : pulseData ? (
+                      <pre className="p-3 rounded-3 bg-body-tertiary border small mb-0 overflow-auto" style={{ maxHeight: '280px' }}>
+                        {JSON.stringify(pulseData, null, 2)}
+                      </pre>
+                    ) : (
+                      <div className="p-3 rounded-3 border text-center text-muted small">
+                        Click 'Refresh Live API' to preview.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Tab.Pane>
+
+              {/* TAB 6: Holiday API */}
+              <Tab.Pane eventKey="holiday">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center gap-2 pb-3 mb-4 border-bottom">
+                    <div className="p-2 rounded-3 bg-secondary text-white">
+                      <Calendar size={20} />
+                    </div>
+                    <div>
+                      <h5 className="mb-0 fw-bold">Holiday API (Calendarific)</h5>
+                      <div className="text-muted small">Accurately determine dates for variable Indian festivals like Diwali and Pongal.</div>
+                    </div>
+                  </div>
+
+                  <Row className="g-3">
+                    <Col xs={12}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Calendarific API Key</Form.Label>
+                        <Form.Control
+                          type="text"
+                          placeholder="Enter Calendarific API Key"
+                          value={config.calendarificApiKey || ''}
+                          onChange={(e) => setConfig({ ...config, calendarificApiKey: e.target.value })}
+                        />
+                        <Form.Text className="text-muted">
+                          Obtain a free API key at <a href="https://calendarific.com" target="_blank" rel="noreferrer">calendarific.com</a>.
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </div>
+              </Tab.Pane>
+
+              {/* TAB 7: Appearance */}
+              <Tab.Pane eventKey="appearance">
+                <div className="glass-panel p-4">
+                  <div className="d-flex align-items-center gap-2 pb-3 mb-4 border-bottom">
+                    <div className="p-2 rounded-3 bg-purple text-white" style={{ background: '#6366f1' }}>
+                      <Palette size={20} />
+                    </div>
+                    <div>
+                      <h5 className="mb-0 fw-bold">Appearance & Themes</h5>
+                      <div className="text-muted small">Personalize your color scheme and interface mode.</div>
+                    </div>
+                  </div>
+
+                  <Row className="g-4">
+                    <Col sm={6}>
+                      <div className="p-3 rounded-3 border bg-body-tertiary">
+                        <div className="fw-medium mb-1">Theme Mode</div>
+                        <p className="text-muted small mb-3">Switch between clean light mode and immersive dark mode.</p>
+                        <Button 
+                          variant="outline-primary" 
+                          size="sm" 
+                          className="rounded-pill px-3"
+                          onClick={toggleMode}
+                        >
+                          Switch to {mode === 'light' ? 'Dark Mode 🌙' : 'Light Mode ☀️'}
+                        </Button>
+                      </div>
+                    </Col>
+
+                    <Col sm={6}>
+                      <div className="p-3 rounded-3 border bg-body-tertiary">
+                        <div className="fw-medium mb-1">Accent Color</div>
+                        <p className="text-muted small mb-3">Choose the primary accent palette for badges and buttons.</p>
+                        <div className="d-flex flex-wrap gap-2">
+                          {colors.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              className={`btn btn-sm rounded-pill px-3 py-1 text-white border-0 ${color === c.id ? 'ring-2' : ''}`}
+                              style={{ 
+                                backgroundColor: c.value,
+                                outline: color === c.id ? '2px solid var(--bs-body-color)' : 'none',
+                                outlineOffset: '2px'
+                              }}
+                              onClick={() => setColor(c.id)}
+                            >
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              </Tab.Pane>
+            </Tab.Content>
+          </Col>
+        </Row>
+      </Tab.Container>
     </Container>
   );
-
 }

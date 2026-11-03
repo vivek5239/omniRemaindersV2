@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
@@ -7,7 +8,26 @@ import crypto from 'crypto';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_PATH = path.join(__dirname, '../data/reminders.json');
+export function getDataDir() {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  if (process.platform !== 'win32' && fsSync.existsSync('/data')) return '/data';
+  if (fsSync.existsSync('/app/data')) return '/app/data';
+  return path.join(__dirname, '../data');
+}
+
+export function getDataPath() {
+  const dir = getDataDir();
+  if (!fsSync.existsSync(dir)) {
+    try {
+      fsSync.mkdirSync(dir, { recursive: true });
+    } catch (e) {
+      console.error(`[DB] Failed to create data dir ${dir}:`, e.message);
+    }
+  }
+  return path.join(dir, 'reminders.json');
+}
+
+const DATA_PATH = getDataPath();
 
 // Ensure data exists and populate with samples if empty
 async function ensureData() {

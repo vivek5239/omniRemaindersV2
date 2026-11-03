@@ -1,341 +1,627 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { Card, Table, Container, Badge, Spinner, Button, Stack, Row, Col, Form } from 'react-bootstrap';
-import { Plus, Edit2, Trash2, ArrowUpDown, ArrowUp, ArrowDown, Copy } from 'lucide-react';
+import { 
+  Container, Row, Col, Table, Badge, Spinner, Button, 
+  Form, InputGroup, OverlayTrigger, Tooltip 
+} from 'react-bootstrap';
+import { 
+  Plus, Edit2, Trash2, ArrowUp, ArrowDown, Copy, 
+  Search, CheckCircle, LayoutGrid, List, AlertCircle,
+  Clock, Repeat as RepeatIcon
+} from 'lucide-react';
+import { format, parseISO, differenceInDays } from 'date-fns';
 import type { Reminder } from '../types';
 import ReminderModal from '../components/ReminderModal';
 
 const CATEGORIES = [
-  'General', 'Work', 'Personal', 'Health', 'Finance', 'Appointments',
-  'Study', 'Travel', 'Shopping', 'Other', 'Imported'
-];
-
-const TAMIL_MONTH_NAMES = [
-  'Chithirai', 'Vaikasi', 'Aani', 'Aadi', 'Avani', 'Purattasi', 
-  'Aippasi', 'Karthigai', 'Margazhi', 'Thai', 'Maasi', 'Panguni'
+  'All', 'General', 'Work', 'Personal', 'Health', 'Finance', 
+  'Appointments', 'Study', 'Travel', 'Shopping', 'Culture', 'Other'
 ];
 
 export default function Reminders() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [selectedSub, setSelectedSub] = useState<Reminder | null>(null);
+  const [selectedReminder, setSelectedReminder] = useState<Reminder | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const location = useLocation();
-  const highlightedRef = useRef<HTMLTableRowElement>(null);
-  const [selectedReminders, setSelectedReminders] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const [filterRecurrence, setFilterRecurrence] = useState<string>('All');
+  const [filterStatus, setFilterStatus] = useState<'All' | 'Active' | 'Overdue' | 'Inactive'>('All');
   const [sortBy, setSortBy] = useState<keyof Reminder>('Next Payment');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [filterCategory, setFilterCategory] = useState<string>('All');
-  const [filterStatus, setFilterStatus] = useState<'All' | 'Yes' | 'No'>('All');
-  const [filterDate, setFilterDate] = useState<string>(''); // YYYY-MM-DD
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const location = useLocation();
+  const highlightedRef = useRef<HTMLTableRowElement>(null);
 
   useEffect(() => {
     fetchData();
-  }, []);
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      const allIds = reminders.map(rem => rem.id);
-      setSelectedReminders(allIds);
-    } else {
-      setSelectedReminders([]);
+    if (location.state?.openModal) {
+      handleAddNew();
     }
-  };
-
-  const handleSelectReminder = (id: string) => {
-    setSelectedReminders(prev => 
-      prev.includes(id) ? prev.filter(remId => remId !== id) : [...prev, id]
-    );
-  };
-
-  const handleBulkDelete = async () => {
-    if (!window.confirm(`Are you sure you want to delete ${selectedReminders.length} selected reminders?`)) return;
-    try {
-      await Promise.all(selectedReminders.map(id => axios.delete(`/api/reminders/${id}`)));
-      setSelectedReminders([]);
-      fetchData();
-    } catch (err) {
-      console.error('Error bulk deleting reminders:', err);
-    }
-  };
-
-  useEffect(() => {
     if (location.state?.newReminderId) {
       setHighlightedId(location.state.newReminderId);
-      // Remove the highlight after the animation
-      const timer = setTimeout(() => {
-        setHighlightedId(null);
-        // Clean up location state to prevent re-highlighting on refresh
-        window.history.replaceState({}, document.title)
-      }, 3000);
-
-      return () => clearTimeout(timer);
+      setTimeout(() => setHighlightedId(null), 3000);
     }
   }, [location.state]);
 
-  useEffect(() => {
-    if (highlightedId && highlightedRef.current) {
-      highlightedRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [highlightedId, reminders]);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const res = await axios.get('/api/reminders');
-      setReminders(res.data.reminders);
+      setReminders(res.data.reminders || []);
     } catch (err) {
-      console.error(err);
+      console.error('Error fetching reminders:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSave = async (remData: Partial<Reminder>) => {
-    try {
-      await axios.post('/api/reminders', remData);
-      fetchData();
-    } catch (err) {
-      console.error('Error saving reminder:', err);
-    }
+  const handleAddNew = () => {
+    setSelectedReminder(null);
+    setShowModal(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this reminder?')) return;
+  const handleEdit = (rem: Reminder) => {
+    setSelectedReminder(rem);
+    setShowModal(true);
+  };
+
+  const handleClone = (rem: Reminder) => {
+    const cloned: Reminder = {
+      ...rem,
+      id: '', // Will be assigned on save
+      Name: `${rem.Name} (Copy)`,
+      Source: 'Manual'
+    };
+    setSelectedReminder(cloned);
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
     try {
       await axios.delete(`/api/reminders/${id}`);
+      showToast(`Deleted "${name}"`);
+      setSelectedIds(prev => prev.filter(item => item !== id));
       fetchData();
-    } catch (err) {
-      console.error('Error deleting reminder:', err);
+    } catch (err: any) {
+      alert('Failed to delete reminder: ' + (err.response?.data?.error || err.message));
     }
   };
 
-  const openAddModal = () => {
-    setSelectedSub(null);
-    setShowModal(true);
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selectedIds.length} selected reminders?`)) return;
+    try {
+      await Promise.all(selectedIds.map(id => axios.delete(`/api/reminders/${id}`)));
+      showToast(`Deleted ${selectedIds.length} reminders.`);
+      setSelectedIds([]);
+      fetchData();
+    } catch (err) {
+      console.error('Error bulk deleting:', err);
+    }
   };
 
-  const openCloneModal = (rem: Reminder) => {
-    // Clone the reminder data, but generate a new ID and clear 'Next Payment' if it's a past date
-    const clonedReminder = { ...rem, id: '', 'Next Payment': new Date().toISOString().split('T')[0] }; // Reset date to today for new clone
-    setSelectedSub(clonedReminder);
-    setShowModal(true);
+  const handleSaveModal = async (remData: Partial<Reminder>) => {
+    try {
+      await axios.post('/api/reminders', remData);
+      setShowModal(false);
+      showToast('Reminder saved successfully!');
+      fetchData();
+    } catch (err: any) {
+      alert('Error saving reminder: ' + (err.response?.data?.error || err.message));
+    }
   };
 
-  const openEditModal = (rem: Reminder) => {
-    setSelectedSub(rem);
-    setShowModal(true);
-  };
-
-  // Sorting logic
-  const handleSort = (columnKey: keyof Reminder) => {
-    if (sortBy === columnKey) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(filteredReminders.map(r => r.id));
     } else {
-      setSortBy(columnKey);
+      setSelectedIds([]);
+    }
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSort = (field: keyof Reminder) => {
+    if (sortBy === field) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
       setSortOrder('asc');
     }
   };
 
-  const getFilteredAndSortedReminders = () => {
-    let filtered = [...reminders];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-    // Apply category filter
-    if (filterCategory !== 'All') {
-      filtered = filtered.filter(rem => rem.Category === filterCategory);
-    }
+  // Filter & Search Logic
+  const filteredReminders = useMemo(() => {
+    return reminders.filter(rem => {
+      // Search
+      const matchesSearch = 
+        !searchQuery || 
+        rem.Name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (rem.Notes && rem.Notes.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (rem.HolidayType && rem.HolidayType.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    // Apply status filter
-    if (filterStatus !== 'All') {
-      filtered = filtered.filter(rem => rem.Active === filterStatus);
-    }
+      if (!matchesSearch) return false;
 
-    // Apply date filter
-    if (filterDate) {
-      filtered = filtered.filter(rem => rem['Next Payment'] === filterDate);
-    }
+      // Category filter
+      if (filterCategory !== 'All' && rem.Category !== filterCategory) return false;
 
-    return filtered.sort((a, b) => {
-      const aValue = a[sortBy];
-      const bValue = b[sortBy];
+      // Recurrence filter
+      if (filterRecurrence !== 'All' && rem.Repeat !== filterRecurrence) return false;
+
+      // Status filter
+      if (filterStatus === 'Active' && rem.Active !== 'Yes') return false;
+      if (filterStatus === 'Inactive' && rem.Active !== 'No') return false;
+      if (filterStatus === 'Overdue') {
+        if (rem.Active !== 'Yes' || !rem['Next Payment']) return false;
+        const dueDate = parseISO(rem['Next Payment']);
+        if (dueDate >= today) return false;
+      }
+
+      return true;
+    }).sort((a, b) => {
+      let aVal = a[sortBy] ?? '';
+      let bVal = b[sortBy] ?? '';
 
       if (sortBy === 'Next Payment') {
-        const dateA = new Date(aValue as string).getTime();
-        const dateB = new Date(bValue as string).getTime();
-        return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+        const aDate = a['Next Payment'] ? new Date(a['Next Payment']).getTime() : 0;
+        const bDate = b['Next Payment'] ? new Date(b['Next Payment']).getTime() : 0;
+        return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
       }
-      
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortOrder === 'asc' ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue);
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
       }
-      // Fallback for types not explicitly handled or mixed types, just compare as strings
-      return sortOrder === 'asc' 
-        ? String(aValue).localeCompare(String(bValue)) 
-        : String(bValue).localeCompare(String(aValue));
+      return 0;
     });
-  };
-
-  const renderSortableHeader = (columnKey: keyof Reminder, label: string) => (
-      <th 
-        className="py-3 text-muted small text-uppercase cursor-pointer user-select-none" 
-        onClick={() => handleSort(columnKey)}
-      >
-          {label}
-          {sortBy === columnKey && (
-              sortOrder === 'asc' ? <ArrowUp size={14} className="ms-1" /> : <ArrowDown size={14} className="ms-1" />
-          )}
-          {sortBy !== columnKey && <ArrowUpDown size={14} className="ms-1 text-muted" />}
-      </th>
-  );
-
-  if (loading) return <Spinner animation="border" className="m-5" />;
+  }, [reminders, searchQuery, filterCategory, filterRecurrence, filterStatus, sortBy, sortOrder]);
 
   return (
-    <Container className="py-4">
-      <Stack direction="horizontal" gap={3} className="mb-4">
-        <h4 className="mb-0 fw-bold">Reminders</h4>
-        <div className="ms-auto d-flex gap-2">
-          {selectedReminders.length > 0 && (
-            <Button variant="danger" className="d-flex align-items-center gap-2 rounded-pill shadow-sm" onClick={handleBulkDelete}>
-              <Trash2 size={18} /> <span className="d-none d-sm-inline">Delete Selected ({selectedReminders.length})</span>
-            </Button>
-          )}
-          <Button variant="primary" className="d-flex align-items-center gap-2 rounded-pill shadow-sm" onClick={openAddModal}>
-            <Plus size={18} /> <span className="d-none d-sm-inline">Add Reminder</span>
+    <Container fluid="xl" className="py-4 px-3 px-sm-4">
+      {/* Toast Alert */}
+      {toastMessage && (
+        <div className="alert alert-success alert-dismissible fade show shadow-sm border-0 d-flex align-items-center justify-content-between mb-4" role="alert">
+          <div className="d-flex align-items-center gap-2">
+            <CheckCircle size={18} className="text-success" />
+            <span>{toastMessage}</span>
+          </div>
+          <button type="button" className="btn-close" onClick={() => setToastMessage(null)} aria-label="Close"></button>
+        </div>
+      )}
+
+      {/* Header & New Reminder Action */}
+      <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
+        <div>
+          <h2 className="fw-bold mb-1 tracking-tight">All Reminders</h2>
+          <p className="text-muted mb-0 small">
+            Manage your schedule, filter by categories, duplicate items, or trigger automatic updates.
+          </p>
+        </div>
+
+        <div className="d-flex align-items-center gap-2">
+          {/* View mode toggle */}
+          <div className="btn-group border rounded-pill p-1 bg-body-tertiary">
+            <button 
+              type="button" 
+              className={`btn btn-sm rounded-pill px-2.5 py-1 ${viewMode === 'table' ? 'btn-primary text-white shadow-sm' : 'btn-link text-body'}`}
+              onClick={() => setViewMode('table')}
+              title="Table View"
+            >
+              <List size={16} />
+            </button>
+            <button 
+              type="button" 
+              className={`btn btn-sm rounded-pill px-2.5 py-1 ${viewMode === 'grid' ? 'btn-primary text-white shadow-sm' : 'btn-link text-body'}`}
+              onClick={() => setViewMode('grid')}
+              title="Grid View"
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </div>
+
+          <Button
+            variant="primary"
+            className="rounded-pill d-flex align-items-center gap-2 px-3 py-2 fw-medium shadow-sm hover-lift"
+            onClick={handleAddNew}
+          >
+            <Plus size={18} />
+            <span>Add Reminder</span>
           </Button>
         </div>
-      </Stack>
+      </div>
 
-      {/* Filter Options */}
-      <Row className="mb-3 g-3">
-        <Col md={4}>
-          <Form.Group>
-            <Form.Label className="small text-muted">Filter by Category</Form.Label>
-            <Form.Select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+      {/* Filter and Search Bar */}
+      <div className="glass-panel p-3 mb-4">
+        <Row className="g-3 align-items-center">
+          {/* Search Input */}
+          <Col lg={4} md={6}>
+            <InputGroup>
+              <InputGroup.Text className="bg-body border-end-0 text-muted">
+                <Search size={16} />
+              </InputGroup.Text>
+              <Form.Control
+                type="text"
+                placeholder="Search by name, notes, or holiday..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="border-start-0 ps-0"
+              />
+            </InputGroup>
+          </Col>
+
+          {/* Category Filter */}
+          <Col lg={3} sm={6}>
+            <Form.Select 
+              value={filterCategory} 
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="form-select"
+            >
               <option value="All">All Categories</option>
-              {CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+              {CATEGORIES.filter(c => c !== 'All').map(c => (
+                <option key={c} value={c}>{c}</option>
               ))}
             </Form.Select>
-          </Form.Group>
-        </Col>
-        <Col md={4}>
-          <Form.Group>
-            <Form.Label className="small text-muted">Filter by Status</Form.Label>
-            <Form.Select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as 'All' | 'Yes' | 'No')}>
-              <option value="All">All Statuses</option>
-              <option value="Yes">Active</option>
-              <option value="No">Inactive</option>
+          </Col>
+
+          {/* Recurrence Filter */}
+          <Col lg={3} sm={6}>
+            <Form.Select 
+              value={filterRecurrence} 
+              onChange={(e) => setFilterRecurrence(e.target.value)}
+              className="form-select"
+            >
+              <option value="All">All Recurrences</option>
+              <option value="One-Time">One-Time</option>
+              <option value="Daily">Daily</option>
+              <option value="Weekly">Weekly</option>
+              <option value="Monthly">Monthly</option>
+              <option value="Yearly">Yearly</option>
             </Form.Select>
-          </Form.Group>
-        </Col>
-        <Col md={4}>
-          <Form.Group>
-            <Form.Label className="small text-muted">Filter by Date</Form.Label>
-            <Form.Control 
-              type="date" 
-              value={filterDate} 
-              onChange={(e) => setFilterDate(e.target.value)} 
-            />
-          </Form.Group>
-        </Col>
-      </Row>
+          </Col>
 
-      <Card className="shadow-sm">
-        <Table responsive hover className="mb-0 align-middle">
-          <thead className="table-light">
-            <tr>
-              <th className="ps-4 py-3" style={{ width: '1%' }}>
-                <Form.Check 
-                  type="checkbox"
-                  onChange={handleSelectAll}
-                  checked={selectedReminders.length === reminders.length && reminders.length > 0}
-                />
-              </th>
-              {renderSortableHeader('Name', 'Name')}
-              {renderSortableHeader('Next Payment', 'Next Reminder')}
-              {renderSortableHeader('Repeat', 'Repeat')}
-              {renderSortableHeader('Category', 'Category')}
-              {renderSortableHeader('Source', 'Source')}
-              <th className="py-3 text-muted small text-uppercase">Status</th>
-              <th className="py-3 text-muted small text-uppercase text-end pe-4">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {getFilteredAndSortedReminders().map((rem) => (
-              <tr 
-                key={rem.id} 
-                ref={rem.id === highlightedId ? highlightedRef : null}
-                className={rem.id === highlightedId ? 'highlight' : ''}
-              >
-                <td>
-                  <Form.Check 
-                    type="checkbox"
-                    checked={selectedReminders.includes(rem.id)}
-                    onChange={() => handleSelectReminder(rem.id)}
-                    className="ms-4"
-                  />
-                </td>
-                <td className="ps-0">
-                  <div className="d-flex align-items-center">
-                    <span className="fw-medium">{rem.Name}</span>
-                  </div>
-                </td>
-                <td className="small text-muted">
-                  {rem['Next Payment']}
-                  {rem.tamilMonthIndex !== undefined && rem.tamilDay !== undefined && (
-                    <div className="small text-info">
-                      ({TAMIL_MONTH_NAMES[rem.tamilMonthIndex]} {rem.tamilDay})
+          {/* Status Filter */}
+          <Col lg={2} sm={6}>
+            <Form.Select 
+              value={filterStatus} 
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+              className="form-select"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Active">Active Only</option>
+              <option value="Overdue">Overdue</option>
+              <option value="Inactive">Inactive</option>
+            </Form.Select>
+          </Col>
+        </Row>
+
+        {/* Bulk Action Bar when items selected */}
+        {selectedIds.length > 0 && (
+          <div className="mt-3 pt-3 border-top d-flex align-items-center justify-content-between">
+            <span className="small fw-semibold text-primary">
+              {selectedIds.length} reminder{selectedIds.length > 1 ? 's' : ''} selected
+            </span>
+            <Button 
+              variant="outline-danger" 
+              size="sm" 
+              className="rounded-pill d-flex align-items-center gap-1.5 px-3"
+              onClick={handleBulkDelete}
+            >
+              <Trash2 size={14} />
+              <span>Delete Selected</span>
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content: Table or Grid */}
+      {loading ? (
+        <div className="text-center py-5">
+          <Spinner animation="border" variant="primary" />
+          <p className="mt-3 text-muted">Loading reminders...</p>
+        </div>
+      ) : filteredReminders.length === 0 ? (
+        <div className="glass-panel p-5 text-center text-muted">
+          <AlertCircle size={40} className="text-muted opacity-50 mb-3" />
+          <h5>No Reminders Found</h5>
+          <p className="small mb-3">Try adjusting your search criteria or create a new reminder.</p>
+          <Button variant="outline-primary" size="sm" onClick={handleAddNew}>
+            Create Reminder
+          </Button>
+        </div>
+      ) : viewMode === 'table' ? (
+        /* Modern Table View */
+        <div className="glass-panel p-0 overflow-hidden">
+          <div className="table-responsive">
+            <Table hover className="align-middle mb-0 modern-table">
+              <thead>
+                <tr className="border-bottom">
+                  <th style={{ width: '40px' }} className="ps-3">
+                    <Form.Check 
+                      type="checkbox" 
+                      onChange={handleSelectAll}
+                      checked={selectedIds.length > 0 && selectedIds.length === filteredReminders.length}
+                    />
+                  </th>
+                  <th 
+                    className="cursor-pointer user-select-none" 
+                    onClick={() => handleSort('Name')}
+                  >
+                    <div className="d-flex align-items-center gap-1">
+                      <span>Reminder Subject</span>
+                      {sortBy === 'Name' && (sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />)}
                     </div>
-                  )}
-                </td>
-                <td className="small text-muted">
-                  {rem.Repeat}
-                </td>
-                <td>
-                  <Badge className="bg-info-remtle text-info-emphasis border border-info-remtle rounded-pill fw-medium px-3">
-                    {rem.Category}
-                  </Badge>
-                  {rem.HolidayType && (
-                    <Badge bg="info" className="rounded-pill fw-medium px-3 ms-2">
-                      {rem.HolidayType}
-                    </Badge>
-                  )}
-                </td>
-                <td className="small text-muted">
-                  {rem.Source || 'N/A'}
-                </td>
-                <td>
-                  <Badge bg={rem.Active === 'Yes' ? 'success' : 'secondary'} className="rounded-pill">
-                    {rem.Active === 'Yes' ? 'Active' : 'Inactive'}
-                  </Badge>
-                </td>
-                <td className="text-end pe-4">
-                  <Stack direction="horizontal" gap={2} className="justify-content-end">
-                    <Button variant="link" className="text-muted p-0 hover-opacity-75" onClick={() => openEditModal(rem)}>
-                      <Edit2 size={16} />
-                    </Button>
-                    <Button variant="link" className="text-muted p-0 hover-opacity-75" onClick={() => openCloneModal(rem)}>
-                      <Copy size={16} />
-                    </Button>
-                    <Button variant="link" className="text-danger p-0 hover-opacity-75" onClick={() => handleDelete(rem.id)}>
-                      <Trash2 size={16} />
-                    </Button>
-                  </Stack>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      </Card>
+                  </th>
+                  <th 
+                    className="cursor-pointer user-select-none" 
+                    onClick={() => handleSort('Next Payment')}
+                  >
+                    <div className="d-flex align-items-center gap-1">
+                      <span>Due Date & Time</span>
+                      {sortBy === 'Next Payment' && (sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />)}
+                    </div>
+                  </th>
+                  <th>Category</th>
+                  <th>Recurrence</th>
+                  <th>Source</th>
+                  <th className="text-end pe-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredReminders.map(rem => {
+                  const daysLeft = rem['Next Payment'] 
+                    ? differenceInDays(parseISO(rem['Next Payment']), today) 
+                    : null;
+                  const isOverdue = daysLeft !== null && daysLeft < 0;
+                  const isToday = daysLeft === 0;
 
-      <ReminderModal 
-        show={showModal} 
-        onHide={() => setShowModal(false)} 
-        onSave={handleSave} 
-        reminder={selectedSub}
+                  return (
+                    <tr 
+                      key={rem.id}
+                      className={highlightedId === rem.id ? 'table-warning' : ''}
+                      ref={highlightedId === rem.id ? highlightedRef : null}
+                    >
+                      <td className="ps-3">
+                        <Form.Check 
+                          type="checkbox"
+                          checked={selectedIds.includes(rem.id)}
+                          onChange={() => handleToggleSelect(rem.id)}
+                        />
+                      </td>
+
+                      <td>
+                        <div className="d-flex flex-column">
+                          <div className="d-flex align-items-center gap-2">
+                            <span className="fw-semibold text-body">{rem.Name}</span>
+                            {rem.HolidayType && (
+                              <Badge bg="warning" text="dark" className="rounded-pill" style={{ fontSize: '0.65rem' }}>
+                                🪔 {rem.HolidayType}
+                              </Badge>
+                            )}
+                          </div>
+                          {rem.Notes && (
+                            <span className="text-muted small text-truncate" style={{ maxWidth: '320px', fontSize: '0.78rem' }}>
+                              {rem.Notes}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td>
+                        <div className="d-flex flex-column">
+                          <span className="small fw-medium">
+                            {rem['Next Payment'] ? format(parseISO(rem['Next Payment']), 'MMM dd, yyyy') : 'No Date'}
+                            {rem.Time && ` at ${rem.Time}`}
+                          </span>
+                          {daysLeft !== null && (
+                            <span style={{ fontSize: '0.75rem' }} className={isOverdue ? 'text-danger fw-semibold' : isToday ? 'text-warning fw-semibold' : 'text-muted'}>
+                              {isOverdue ? `Overdue by ${Math.abs(daysLeft)}d` : isToday ? 'Due Today' : `In ${daysLeft} days`}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td>
+                        <Badge bg="secondary" className="rounded-pill fw-normal" style={{ fontSize: '0.72rem' }}>
+                          {rem.Category || 'General'}
+                        </Badge>
+                      </td>
+
+                      <td>
+                        <span className="small text-body d-flex align-items-center gap-1">
+                          <RepeatIcon size={12} className="text-muted" />
+                          <span>{rem.Repeat || 'One-Time'}</span>
+                        </span>
+                      </td>
+
+                      <td>
+                        <Badge 
+                          bg={rem.Source === 'AI' ? 'primary' : rem.Source === 'API' ? 'info' : 'light'} 
+                          text={rem.Source === 'Manual' ? 'dark' : undefined}
+                          className="rounded-pill fw-normal" 
+                          style={{ fontSize: '0.68rem' }}
+                        >
+                          {rem.Source || 'Manual'}
+                        </Badge>
+                      </td>
+
+                      <td className="text-end pe-3">
+                        <div className="d-flex align-items-center justify-content-end gap-1">
+                          <OverlayTrigger overlay={<Tooltip>Mark as Done</Tooltip>}>
+                            <Button
+                              variant="outline-success"
+                              size="sm"
+                              className="rounded-circle p-1 d-flex align-items-center justify-content-center"
+                              style={{ width: 28, height: 28 }}
+                              onClick={() => handleDelete(rem.id, rem.Name)}
+                            >
+                              <CheckCircle size={14} />
+                            </Button>
+                          </OverlayTrigger>
+
+                          <OverlayTrigger overlay={<Tooltip>Clone</Tooltip>}>
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              className="rounded-circle p-1 d-flex align-items-center justify-content-center"
+                              style={{ width: 28, height: 28 }}
+                              onClick={() => handleClone(rem)}
+                            >
+                              <Copy size={13} />
+                            </Button>
+                          </OverlayTrigger>
+
+                          <OverlayTrigger overlay={<Tooltip>Edit</Tooltip>}>
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              className="rounded-circle p-1 d-flex align-items-center justify-content-center"
+                              style={{ width: 28, height: 28 }}
+                              onClick={() => handleEdit(rem)}
+                            >
+                              <Edit2 size={13} />
+                            </Button>
+                          </OverlayTrigger>
+
+                          <OverlayTrigger overlay={<Tooltip>Delete</Tooltip>}>
+                            <Button
+                              variant="outline-danger"
+                              size="sm"
+                              className="rounded-circle p-1 d-flex align-items-center justify-content-center"
+                              style={{ width: 28, height: 28 }}
+                              onClick={() => handleDelete(rem.id, rem.Name)}
+                            >
+                              <Trash2 size={13} />
+                            </Button>
+                          </OverlayTrigger>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+        </div>
+      ) : (
+        /* Modern Card Grid View */
+        <Row className="g-3">
+          {filteredReminders.map(rem => {
+            const daysLeft = rem['Next Payment'] 
+              ? differenceInDays(parseISO(rem['Next Payment']), today) 
+              : null;
+            const isOverdue = daysLeft !== null && daysLeft < 0;
+            const isToday = daysLeft === 0;
+
+            return (
+              <Col key={rem.id} xs={12} md={6} lg={4}>
+                <div className="glass-panel p-3.5 h-100 d-flex flex-column justify-content-between hover-lift">
+                  <div>
+                    <div className="d-flex align-items-start justify-content-between gap-2 mb-2">
+                      <div className="d-flex flex-wrap gap-1">
+                        <Badge bg="secondary" className="rounded-pill" style={{ fontSize: '0.68rem' }}>
+                          {rem.Category || 'General'}
+                        </Badge>
+                        {rem.HolidayType && (
+                          <Badge bg="warning" text="dark" className="rounded-pill" style={{ fontSize: '0.68rem' }}>
+                            🪔 {rem.HolidayType}
+                          </Badge>
+                        )}
+                      </div>
+
+                      <Badge 
+                        bg={isOverdue ? 'danger' : isToday ? 'warning' : 'primary'}
+                        className="rounded-pill"
+                        style={{ fontSize: '0.7rem' }}
+                      >
+                        {isOverdue ? `Overdue ${Math.abs(daysLeft!)}d` : isToday ? 'Today' : `In ${daysLeft}d`}
+                      </Badge>
+                    </div>
+
+                    <h6 className="fw-bold mb-1 text-truncate">{rem.Name}</h6>
+                    
+                    <div className="text-muted small mb-2 d-flex align-items-center gap-2">
+                      <Clock size={13} />
+                      <span>{rem['Next Payment'] ? format(parseISO(rem['Next Payment']), 'MMM dd, yyyy') : 'No Date'}</span>
+                      {rem.Time && <span>• {rem.Time}</span>}
+                    </div>
+
+                    {rem.Notes && (
+                      <p className="text-muted small mb-3 text-truncate-2" style={{ fontSize: '0.8rem' }}>
+                        {rem.Notes}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="d-flex align-items-center justify-content-between pt-2 border-top">
+                    <span className="small text-muted d-flex align-items-center gap-1">
+                      <RepeatIcon size={12} /> {rem.Repeat || 'One-Time'}
+                    </span>
+
+                    <div className="d-flex align-items-center gap-1">
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                        style={{ width: 28, height: 28 }}
+                        onClick={() => handleClone(rem)}
+                        title="Clone"
+                      >
+                        <Copy size={13} />
+                      </Button>
+
+                      <Button
+                        variant="outline-primary"
+                        size="sm"
+                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                        style={{ width: 28, height: 28 }}
+                        onClick={() => handleEdit(rem)}
+                        title="Edit"
+                      >
+                        <Edit2 size={13} />
+                      </Button>
+
+                      <Button
+                        variant="outline-success"
+                        size="sm"
+                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                        style={{ width: 28, height: 28 }}
+                        onClick={() => handleDelete(rem.id, rem.Name)}
+                        title="Mark Done"
+                      >
+                        <CheckCircle size={14} />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </Col>
+            );
+          })}
+        </Row>
+      )}
+
+      {/* Reminder Create/Edit Modal */}
+      <ReminderModal
+        show={showModal}
+        onHide={() => setShowModal(false)}
+        onSave={handleSaveModal}
+        reminder={selectedReminder}
       />
     </Container>
   );

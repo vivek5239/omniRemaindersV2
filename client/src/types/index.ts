@@ -18,9 +18,15 @@ export interface DashboardData {
   reminders: Reminder[];
 }
 
+export interface GeminiModelInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface Settings {
-  groqApiKey: string;
-  groqModel?: string;
+  geminiApiKey?: string;
+  geminiModel?: string;
   calendarificApiKey?: string;
   gotifyUrl: string;
   gotifyToken: string;
@@ -33,4 +39,66 @@ export interface Settings {
   notificationsEnabled: boolean;
   dailyCheckTime: string;
   lastDailyCheck: string | null;
+}
+
+export interface PulseSummary {
+  status: string;
+  service: string;
+  timestamp: string;
+  counts: {
+    total: number;
+    active: number;
+    overdue: number;
+    dueToday: number;
+    dueTomorrow: number;
+    upcomingWithinWindow: number;
+    windowDays: number;
+  };
+  nextUpcoming?: {
+    id: string;
+    name: string;
+    dueDate: string;
+    time: string;
+    category: string;
+    repeat: string;
+    daysRemaining: number;
+    isOverdue: boolean;
+    isToday: boolean;
+  };
+  dueToday: Array<{
+    id: string;
+    name: string;
+    dueDate: string;
+    time: string;
+    category: string;
+    repeat: string;
+    daysRemaining: number;
+  }>;
+  dueTomorrow: Array<{
+    id: string;
+    name: string;
+    dueDate: string;
+    time: string;
+    category: string;
+    repeat: string;
+    daysRemaining: number;
+  }>;
+  overdue: Array<{
+    id: string;
+    name: string;
+    dueDate: string;
+    time: string;
+    category: string;
+    repeat: string;
+    daysRemaining: number;
+  }>;
+  upcoming: Array<{
+    id: string;
+    name: string;
+    dueDate: string;
+    time: string;
+    category: string;
+    repeat: string;
+    daysRemaining: number;
+  }>;
 }

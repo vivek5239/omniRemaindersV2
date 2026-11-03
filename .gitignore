@@ -38,3 +38,6 @@ data/
 
 .gemini/
 gha-creds-*.json
+
+.playwright-mcp/
+server/public/

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Modal, Button, Form, Row, Col, Stack, Spinner } from 'react-bootstrap';
-import { Calendar } from 'lucide-react';
+import { Modal, Button, Form, Row, Col, Badge } from 'react-bootstrap';
+import { Calendar, RefreshCw } from 'lucide-react';
 import axios from 'axios';
-import { addYears, format } from 'date-fns';
 import type { Reminder } from '../types';
 
 interface ReminderModalProps {
@@ -13,16 +12,8 @@ interface ReminderModalProps {
 }
 
 const CATEGORIES = [
-  'General',
-  'Work',
-  'Personal',
-  'Health',
-  'Finance',
-  'Appointments',
-  'Study',
-  'Travel',
-  'Shopping',
-  'Other'
+  'General', 'Work', 'Personal', 'Health', 'Finance', 
+  'Appointments', 'Study', 'Travel', 'Shopping', 'Culture', 'Other'
 ];
 
 const TAMIL_MONTHS = [
@@ -38,35 +29,37 @@ export default function ReminderModal({ show, onHide, onSave, reminder }: Remind
   const [formData, setFormData] = useState<Partial<Reminder>>({
     Name: '',
     'Next Payment': new Date().toISOString().split('T')[0],
-    Time: '09:00', // Default to 9 AM
+    Time: '09:00',
     Category: 'General',
     Active: 'Yes',
     Notes: '',
-    remindBefore: 3, // Default to 3 days before
-    Repeat: 'One-Time', // Default to One-Time
+    remindBefore: 3,
+    Repeat: 'One-Time',
+    Source: 'Manual'
   });
   const [useTamilDate, setUseTamilDate] = useState(false);
-  const [tamilMonth, setTamilMonth] = useState(0); // Index of TAMIL_MONTHS
+  const [tamilMonth, setTamilMonth] = useState(0);
   const [tamilDay, setTamilDay] = useState(1);
-  const [fetchingNextHolidayDate, setFetchingNextHolidayDate] = useState(false); // For holiday date button
-  
-  useEffect(() => {    if (reminder) {
+  const [fetchingHoliday, setFetchingHoliday] = useState(false);
+  const [holidayError, setHolidayError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (reminder) {
       setFormData({
         ...reminder,
         remindBefore: typeof reminder.remindBefore === 'number' ? reminder.remindBefore : 3,
-        Repeat: reminder.Repeat || 'One-Time', // Set existing repeat or default
-        Time: reminder.Time || '09:00', // Set existing time or default
+        Repeat: reminder.Repeat || 'One-Time',
+        Time: reminder.Time || '09:00',
+        Source: reminder.Source || 'Manual'
       });
-      // If editing a reminder with Tamil date info, set the switch and values
       if (reminder.tamilMonthIndex !== undefined && reminder.tamilDay !== undefined) {
         setUseTamilDate(true);
         setTamilMonth(reminder.tamilMonthIndex);
         setTamilDay(reminder.tamilDay);
       } else {
-        setUseTamilDate(false); 
+        setUseTamilDate(false);
       }
     } else {
-      // For new reminders
       setFormData({
         Name: '',
         'Next Payment': new Date().toISOString().split('T')[0],
@@ -76,258 +69,307 @@ export default function ReminderModal({ show, onHide, onSave, reminder }: Remind
         Notes: '',
         remindBefore: 3,
         Repeat: 'One-Time',
+        Source: 'Manual'
       });
       setUseTamilDate(false);
       setTamilMonth(0);
       setTamilDay(1);
     }
+    setHolidayError(null);
   }, [reminder, show]);
 
-  useEffect(() => {
-    const convertTamilDate = async () => {
-      if (useTamilDate) {
-        try {
-          const res = await axios.post('/api/convert-tamil-date', {
-            tamilMonthIndex: tamilMonth,
-            tamilDay: tamilDay,
-            currentGregorianDate: formData['Next Payment'] // Pass current Gregorian date from form for better year inference
-          });
-          setFormData(prev => ({ ...prev, 'Next Payment': res.data.gregorianDate, tamilMonthIndex: tamilMonth, tamilDay: tamilDay }));
-        } catch (error) {
-          console.error('Error converting Tamil date:', error);
-          alert('Failed to convert Tamil date. Please check the date or use Gregorian.');
-          setFormData(prev => ({ ...prev, 'Next Payment': new Date().toISOString().split('T')[0], tamilMonthIndex: undefined, tamilDay: undefined }));
-          setUseTamilDate(false); // Switch back to Gregorian if conversion fails
-        }
-      } else {
-        // If switching back to Gregorian, clear tamil date fields from formData
-        setFormData(prev => {
-          const newState = { ...prev };
-          delete newState.tamilMonthIndex;
-          delete newState.tamilDay;
-          return newState;
-        });
+  const handleConvertTamil = async (mIndex: number, day: number) => {
+    try {
+      const res = await axios.post('/api/convert-tamil-date', {
+        tamilMonthIndex: mIndex,
+        tamilDay: day
+      });
+      setFormData(prev => ({
+        ...prev,
+        'Next Payment': res.data.gregorianDate,
+        tamilMonthIndex: mIndex,
+        tamilDay: day
+      }));
+    } catch (err: any) {
+      console.error('Failed to convert Tamil date:', err);
+    }
+  };
+
+  const handleFetchHolidayDate = async () => {
+    if (!formData.HolidayType) return;
+    setFetchingHoliday(true);
+    setHolidayError(null);
+    try {
+      const currentYear = formData['Next Payment']
+        ? new Date(formData['Next Payment']).getFullYear()
+        : new Date().getFullYear();
+
+      // Fetch next year
+      const targetYear = currentYear + 1;
+      const res = await axios.get('/api/holiday-date', {
+        params: { holidayName: formData.HolidayType, year: targetYear }
+      });
+
+      if (res.data.date) {
+        setFormData(prev => ({
+          ...prev,
+          'Next Payment': res.data.date,
+          Notes: res.data.details?.description 
+            ? `${prev.Notes ? prev.Notes + '\n' : ''}[Holiday Details] ${res.data.details.description}`
+            : prev.Notes
+        }));
       }
-    };
-    convertTamilDate();
-  }, [useTamilDate, tamilMonth, tamilDay, formData['Next Payment']]);
+    } catch (err: any) {
+      setHolidayError(err.response?.data?.error || 'Could not fetch holiday date');
+    } finally {
+      setFetchingHoliday(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
-    onHide();
-    };
-    
-const onFetchNextHolidayDate = async () => {
-  if (!formData.HolidayType || formData.Repeat !== 'Yearly') return;
-  setFetchingNextHolidayDate(true);
-  try {
-    if (formData.Source === 'API') { // Only use API for 'API' sourced holiday reminders
-      const currentYear = new Date(formData['Next Payment'] || new Date()).getFullYear();
-      const nextYear = currentYear + 1;
-      const res = await axios.get('/api/holiday-date', {
-        params: {
-          holidayName: formData.HolidayType,
-          year: nextYear,
-        },
-      });
-      if (res.data.date) {
-        setFormData(prev => ({ ...prev, 'Next Payment': res.data.date }));
-        alert(`Fetched next ${formData.HolidayType} date: ${res.data.date}`);
-      } else {
-        alert(`Could not find next ${formData.HolidayType} date for ${nextYear}.`);
-      }
-    } else { // For AI, Manual, or unspecified source, just add a year
-      const currentNextPayment = new Date(formData['Next Payment'] || new Date());
-      const nextYearDate = addYears(currentNextPayment, 1);
-      const formattedNextYearDate = format(nextYearDate, 'yyyy-MM-dd');
-      setFormData(prev => ({ ...prev, 'Next Payment': formattedNextYearDate }));
-      alert(`Updated 'Next Payment' to ${formattedNextYearDate} for next year.`);
+    if (!formData.Name?.trim()) {
+      alert('Reminder name is required.');
+      return;
     }
-  } catch (error: any) {
-    console.error('Error fetching/calculating next holiday date:', error);
-    alert(`Failed to update next holiday date: ${error.response?.data?.error || error.message}`);
-  } finally {
-    setFetchingNextHolidayDate(false);
-  }
-};
+    if (!formData['Next Payment']) {
+      alert('Due date is required.');
+      return;
+    }
+    onSave(formData);
+  };
+
   return (
     <Modal show={show} onHide={onHide} size="lg" centered>
-      <Modal.Header closeButton>
-        <Modal.Title>{reminder ? 'Edit Reminder' : 'Add New Reminder'}</Modal.Title>
+      <Modal.Header closeButton className="border-bottom">
+        <Modal.Title className="fw-bold d-flex align-items-center gap-2 fs-5">
+          <Calendar size={20} className="text-primary" />
+          <span>{formData.id ? 'Edit Reminder' : 'Create New Reminder'}</span>
+        </Modal.Title>
       </Modal.Header>
+
       <Form onSubmit={handleSubmit}>
-        <Modal.Body>
-          <Row className="mb-3">
-            <Form.Group as={Col} md={12}>
-              <Form.Label>Reminder Name</Form.Label>
-              <Form.Control
-                required
-                type="text"
-                placeholder="e.g. Call Mom"
-                value={formData.Name}
-                onChange={(e) => setFormData({ ...formData, Name: e.target.value })}
-              />
-            </Form.Group>
-          </Row>
-          {formData.HolidayType && (
-            <Row className="mb-3">
-              <Form.Group as={Col} md={12}>
-                <Form.Label>Holiday Type</Form.Label>
+        <Modal.Body className="p-4">
+          <Row className="g-3">
+            {/* Reminder Name */}
+            <Col xs={12}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Reminder Name / Title *</Form.Label>
                 <Form.Control
-                  readOnly
                   type="text"
-                  value={formData.HolidayType}
-                  className="bg-body-secondary"
+                  placeholder="e.g., Pay electricity bill"
+                  value={formData.Name || ''}
+                  onChange={(e) => setFormData({ ...formData, Name: e.target.value })}
+                  required
                 />
               </Form.Group>
-            </Row>
-          )}
-            <Row className="mb-3">
-              <Form.Group as={Col} md={12}>
-                <Form.Label>Source</Form.Label>
+            </Col>
+
+            {/* Date & Time */}
+            <Col md={7}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Due Date *</Form.Label>
+                <Form.Control
+                  type="date"
+                  value={formData['Next Payment'] || ''}
+                  onChange={(e) => setFormData({ ...formData, 'Next Payment': e.target.value })}
+                  required
+                />
+              </Form.Group>
+            </Col>
+
+            <Col md={5}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Time</Form.Label>
+                <Form.Control
+                  type="time"
+                  value={formData.Time || '09:00'}
+                  onChange={(e) => setFormData({ ...formData, Time: e.target.value })}
+                />
+              </Form.Group>
+            </Col>
+
+            {/* Recurrence & Category */}
+            <Col md={4}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Recurrence</Form.Label>
                 <Form.Select
-                  value={formData.Source || 'Manual'} // Default to 'Manual' if not set
-                  onChange={(e) => setFormData({ ...formData, Source: e.target.value as 'API' | 'AI' | 'Manual' })}
+                  value={formData.Repeat || 'One-Time'}
+                  onChange={(e) => setFormData({ ...formData, Repeat: e.target.value as any })}
                 >
-                  <option value="Manual">Manual</option>
-                  <option value="AI">AI</option>
-                  <option value="API">API</option>
+                  <option value="One-Time">One-Time</option>
+                  <option value="Daily">Daily</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Monthly">Monthly</option>
+                  <option value="Yearly">Yearly</option>
                 </Form.Select>
               </Form.Group>
-            </Row>
+            </Col>
 
-          <Row className="mb-3">
-            <Form.Group as={Col} md={6}>
-              <Form.Label className="d-flex justify-content-between align-items-center">
-                Next Reminder Date
-                <Form.Check 
-                  type="switch"
-                  id="custom-switch"
-                  label="Tamil Date"
-                  checked={useTamilDate}
-                  onChange={(e) => setUseTamilDate(e.target.checked)}
+            <Col md={4}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Category</Form.Label>
+                <Form.Select
+                  value={formData.Category || 'General'}
+                  onChange={(e) => setFormData({ ...formData, Category: e.target.value })}
+                >
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </Col>
+
+            <Col md={4}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Remind Before (Days)</Form.Label>
+                <Form.Control
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={formData.remindBefore ?? 3}
+                  onChange={(e) => setFormData({ ...formData, remindBefore: parseInt(e.target.value, 10) || 0 })}
                 />
-              </Form.Label>
-              {useTamilDate ? (
-                <Row>
-                  <Col>
-                    <Form.Select
-                      value={tamilMonth}
-                      onChange={(e) => setTamilMonth(parseInt(e.target.value))}
-                    >
-                      {TAMIL_MONTHS.map((month, index) => (
-                        <option key={month.name} value={index}>{month.name}</option>
-                      ))}
-                    </Form.Select>
-                  </Col>
-                  <Col>
-                    <Form.Select
-                      value={tamilDay}
-                      onChange={(e) => setTamilDay(parseInt(e.target.value))}
-                    >
-                      {Array.from({ length: TAMIL_MONTHS[tamilMonth].days }, (_, i) => i + 1).map(day => (
-                        <option key={day} value={day}>{day}</option>
-                      ))}
-                    </Form.Select>
-                  </Col>
-                </Row>
-              ) : (
-                <Stack direction="horizontal" gap={2}>
-                  <Form.Control
-                    required
-                    type="date"
-                    value={formData['Next Payment']}
-                    onChange={(e) => setFormData({ ...formData, 'Next Payment': e.target.value })}
+              </Form.Group>
+            </Col>
+
+            {/* Tamil Date Converter Switch */}
+            <Col xs={12}>
+              <div className="p-3 rounded-3 border bg-body-tertiary">
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <Form.Check
+                    type="switch"
+                    id="tamil-date-switch"
+                    label={<span className="fw-medium small">Use Tamil Calendar Date</span>}
+                    checked={useTamilDate}
+                    onChange={(e) => {
+                      setUseTamilDate(e.target.checked);
+                      if (e.target.checked) {
+                        handleConvertTamil(tamilMonth, tamilDay);
+                      }
+                    }}
                   />
-                  {formData.HolidayType && formData.Repeat === 'Yearly' && (
-                    <Button 
-                      variant="outline-secondary" 
+                  {useTamilDate && (
+                    <Badge bg="info" className="fw-normal">
+                      Calculates next Gregorian match
+                    </Badge>
+                  )}
+                </div>
+
+                {useTamilDate && (
+                  <Row className="g-2 pt-2">
+                    <Col sm={6}>
+                      <Form.Select
+                        value={tamilMonth}
+                        onChange={(e) => {
+                          const m = parseInt(e.target.value, 10);
+                          setTamilMonth(m);
+                          handleConvertTamil(m, tamilDay);
+                        }}
+                      >
+                        {TAMIL_MONTHS.map((tm, idx) => (
+                          <option key={tm.name} value={idx}>{tm.name}</option>
+                        ))}
+                      </Form.Select>
+                    </Col>
+                    <Col sm={6}>
+                      <Form.Control
+                        type="number"
+                        min="1"
+                        max={TAMIL_MONTHS[tamilMonth]?.days || 31}
+                        value={tamilDay}
+                        onChange={(e) => {
+                          const d = parseInt(e.target.value, 10) || 1;
+                          setTamilDay(d);
+                          handleConvertTamil(tamilMonth, d);
+                        }}
+                      />
+                    </Col>
+                  </Row>
+                )}
+              </div>
+            </Col>
+
+            {/* Holiday Type & Calendarific Auto-Sync */}
+            <Col xs={12}>
+              <Form.Group>
+                <div className="d-flex align-items-center justify-content-between mb-1">
+                  <Form.Label className="fw-medium small mb-0">Holiday Sync (e.g., Diwali, Pongal, Christmas)</Form.Label>
+                  {formData.HolidayType && (
+                    <Button
+                      variant="link"
                       size="sm"
-                      onClick={onFetchNextHolidayDate}
-                      disabled={fetchingNextHolidayDate}
-                      title="Fetch next year's holiday date"
+                      className="p-0 text-decoration-none d-flex align-items-center gap-1 small"
+                      onClick={handleFetchHolidayDate}
+                      disabled={fetchingHoliday}
                     >
-                      {fetchingNextHolidayDate ? <Spinner size="sm" animation="border" /> : <Calendar size={16} />}
+                      <RefreshCw size={12} className={fetchingHoliday ? 'spin' : ''} />
+                      <span>{fetchingHoliday ? 'Fetching...' : 'Fetch Next Year Date'}</span>
                     </Button>
                   )}
-                </Stack>
-              )}
-            </Form.Group>
-            <Form.Group as={Col} md={6}>
-              <Form.Label>Category</Form.Label>
-              <Form.Select
-                value={formData.Category}
-                onChange={(e) => setFormData({ ...formData, Category: e.target.value })}
-              >
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+                </div>
+                <Form.Control
+                  type="text"
+                  placeholder="e.g., Diwali or Pongal"
+                  value={formData.HolidayType || ''}
+                  onChange={(e) => setFormData({ ...formData, HolidayType: e.target.value })}
+                />
+                {holidayError && (
+                  <div className="text-danger small mt-1">{holidayError}</div>
+                )}
+              </Form.Group>
+            </Col>
+
+            {/* Notes */}
+            <Col xs={12}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Notes / Description</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={3}
+                  placeholder="Add any additional details or instructions..."
+                  value={formData.Notes || ''}
+                  onChange={(e) => setFormData({ ...formData, Notes: e.target.value })}
+                />
+              </Form.Group>
+            </Col>
+
+            {/* Active Toggle & Source */}
+            <Col sm={6}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Status</Form.Label>
+                <Form.Select
+                  value={formData.Active || 'Yes'}
+                  onChange={(e) => setFormData({ ...formData, Active: e.target.value as any })}
+                >
+                  <option value="Yes">Active (Receive reminders)</option>
+                  <option value="No">Inactive / Completed</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
+
+            <Col sm={6}>
+              <Form.Group>
+                <Form.Label className="fw-medium small">Source Tag</Form.Label>
+                <Form.Select
+                  value={formData.Source || 'Manual'}
+                  onChange={(e) => setFormData({ ...formData, Source: e.target.value as any })}
+                >
+                  <option value="Manual">Manual</option>
+                  <option value="AI">AI Created</option>
+                  <option value="API">API Sync</option>
+                </Form.Select>
+              </Form.Group>
+            </Col>
           </Row>
-
-          <Row className="mb-3">
-            <Form.Group as={Col} md={6}>
-              <Form.Label>Time</Form.Label>
-              <Form.Control
-                type="time"
-                value={formData.Time}
-                onChange={(e) => setFormData({ ...formData, Time: e.target.value })}
-              />
-            </Form.Group>
-          </Row>
-
-          <Row className="mb-3">
-            <Form.Group as={Col} md={6}>
-              <Form.Label>Remind Me Before</Form.Label>
-              <Form.Select
-                value={formData.remindBefore}
-                onChange={(e) => setFormData({ ...formData, remindBefore: parseInt(e.target.value) })}
-              >
-                <option value={0}>On the day</option>
-                <option value={1}>1 day before</option>
-                <option value={2}>2 days before</option>
-                <option value={3}>3 days before</option>
-                <option value={7}>7 days before</option>
-              </Form.Select>
-            </Form.Group>
-            <Form.Group as={Col} md={6}>
-              <Form.Label>Repeat</Form.Label>
-              <Form.Select
-                value={formData.Repeat}
-                onChange={(e) => setFormData({ ...formData, Repeat: e.target.value as 'One-Time' | 'Daily' | 'Weekly' | 'Monthly' | 'Yearly' })}
-              >
-                <option value="One-Time">One-Time</option>
-                <option value="Daily">Daily</option>
-                <option value="Weekly">Weekly</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Yearly">Yearly</option>
-              </Form.Select>
-            </Form.Group>
-          </Row>
-
-          <Form.Group className="mb-3">
-            <Form.Label>Notes</Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={2}
-              value={formData.Notes}
-              onChange={(e) => setFormData({ ...formData, Notes: e.target.value })}
-            />
-          </Form.Group>
-
-          <Form.Check 
-            type="switch"
-            label="Active Reminder"
-            checked={formData.Active === 'Yes'}
-            onChange={(e) => setFormData({ ...formData, Active: e.target.checked ? 'Yes' : 'No' })}
-          />
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="light" onClick={onHide}>Cancel</Button>
+
+        <Modal.Footer className="border-top">
+          <Button variant="outline-secondary" onClick={onHide}>
+            Cancel
+          </Button>
           <Button variant="primary" type="submit">
-            {reminder ? 'Save Changes' : 'Create Reminder'}
+            Save Reminder
           </Button>
         </Modal.Footer>
       </Form>
