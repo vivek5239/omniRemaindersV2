@@ -1,7 +1,7 @@
 # OmniRemindersV2 — Session History & Conversation Audit
 
 - **Active Conversation ID**: `b140c059-3964-4006-a5eb-57f2d8da75c1`
-- **Docker Hub Target**: `vivek5239/reminders-app:latest`
+- **Docker Hub Target**: `vivek5239/reminders-app:latest` (Pushed: `sha256:712ab017b6c98d4c6b0ae0df8a86d43f088a3a590b97b85607cc3d01e4a755e8`)
 - **GitHub Repository**: `https://github.com/vivek5239/omniRemaindersV2.git`
 
 This document maintains a persistent chronological record of all agent development sessions, architectural decisions, user requests, and conversation IDs for the OmniRemindersV2 workspace.
@@ -153,3 +153,4 @@ This session established the core reminder management system and integrated exte
 * **Active Status Normalization**: Updated filter to `const isActive = rem.Active === undefined || rem.Active === 'Yes' || rem.Active === true;` ensuring reminders default to active. Explicitly marked Diwali reminder as active with `remindBefore: 7`.
 * **Dynamic Timezone & Window Settings**: Added `notificationWindowDays` and `timezone` (`Europe/London`, `Asia/Kolkata`, `UTC`) to `SettingsView.tsx` and `server/index.js`, dynamically honoring `process.env.TZ`.
 * **Live Verification**: Rebuilt client assets into `server/public/`, triggered `POST /api/test/reminders`, and verified that Gotify and Email alerts for **Diwali reminder** (`2026-11-08`, due in 4 days) were dispatched with HTTP 200 success.
+* **Docker Hub Push**: Built production container with `.dockerignore` and successfully pushed `vivek5239/reminders-app:latest` (Digest: `sha256:712ab017b6c98d4c6b0ae0df8a86d43f088a3a590b97b85607cc3d01e4a755e8`) to Docker Hub.
