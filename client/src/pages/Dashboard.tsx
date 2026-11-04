@@ -50,9 +50,9 @@ export default function Dashboard() {
       ]);
       const settingsData = settingsRes.data;
       if (settingsData) {
-        const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+        const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
         if (!settingsData.geminiModel || invalid.includes(settingsData.geminiModel)) {
-          settingsData.geminiModel = 'gemini-3.8-flash';
+          settingsData.geminiModel = 'gemini-flash-lite-latest';
         }
       }
       setData(remindersRes.data);
@@ -112,7 +112,7 @@ export default function Dashboard() {
     try {
       const res = await axios.post('/api/ai/create-reminder', {
         text: textForAi,
-        model: settings.geminiModel || 'gemini-3.8-flash'
+        model: settings.geminiModel || 'gemini-flash-lite-latest'
       });
 
       if (res.data.question) {
@@ -303,7 +303,7 @@ export default function Dashboard() {
             </div>
             <span className="fw-bold">Smart Natural Language Creation</span>
             <Badge bg="secondary" className="rounded-pill text-uppercase fw-normal" style={{ fontSize: '0.65rem' }}>
-              {settings?.geminiModel || 'gemini-3.8-flash'}
+              {settings?.geminiModel || 'gemini-flash-lite-latest'}
             </Badge>
           </div>
           <span className="text-muted small">
@@ -359,6 +359,12 @@ export default function Dashboard() {
               )}
             </Button>
           </InputGroup>
+          {nlReminderLoading && (
+            <div className="d-flex align-items-center gap-2 mt-2 px-1 text-primary small">
+              <Spinner animation="border" size="sm" />
+              <span>Gemini AI is parsing and creating your reminder (takes ~15-20s)...</span>
+            </div>
+          )}
         </Form>
 
         {/* Example Prompt Chips */}

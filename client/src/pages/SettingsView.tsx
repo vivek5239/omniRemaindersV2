@@ -15,7 +15,7 @@ import { useTheme, type ThemeColor } from '../context/ThemeContext';
 export default function SettingsView() {
   const [config, setConfig] = useState<Settings>({
     geminiApiKey: '',
-    geminiModel: 'gemini-3.8-flash',
+    geminiModel: 'gemini-flash-lite-latest',
     calendarificApiKey: '',
     gotifyUrl: '',
     gotifyToken: '',
@@ -81,9 +81,9 @@ export default function SettingsView() {
       const res = await axios.get('/api/settings');
       if (res.data) {
         const rawModel = res.data.geminiModel;
-        const invalidModels = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+        const invalidModels = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
         const safeModel = (!rawModel || invalidModels.includes(rawModel))
-          ? 'gemini-3.8-flash'
+          ? 'gemini-flash-lite-latest'
           : rawModel;
 
         setConfig(prev => ({
@@ -116,12 +116,12 @@ export default function SettingsView() {
       console.error('Failed to load Gemini models:', err);
       // Clean curated fallback
       setGeminiModels([
-        { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite Latest (Fastest & Free Tier Recommended)', description: 'Ultra-fast, generous rate limits, zero quota bottlenecks on Free Tier' },
-        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Flagship Flash)', description: 'Flagship reasoning model (limited to 20 requests/day on Google Free Tier)' },
+        { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite Latest (Recommended - Free Tier Quota-Free)', description: 'Fast, generous rate limits, zero daily quota bottlenecks on Free Tier' },
+        { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', description: 'Stable lightweight production model with generous free quotas' },
         { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: 'Lightweight, rapid response model' },
-        { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast, reliable production model' },
-        { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
-        { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' }
+        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Flagship - Capped at 20 req/day on Free Tier)', description: 'Flagship reasoning model (limited to 20 requests/day on Google Free Tier)' },
+        { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast production model' },
+        { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses newest Flash version' }
       ]);
       setModelSource('curated');
     } finally {
@@ -398,7 +398,7 @@ export default function SettingsView() {
                           </div>
                         </div>
                         <Form.Select
-                          value={config.geminiModel || 'gemini-3.8-flash'}
+                          value={config.geminiModel || 'gemini-flash-lite-latest'}
                           onChange={(e) => setConfig({ ...config, geminiModel: e.target.value })}
                         >
                           {geminiModels.map(m => (
@@ -413,7 +413,7 @@ export default function SettingsView() {
                           )}
                         </Form.Select>
                         <Form.Text className="text-muted">
-                          Recommended: <strong>gemini-flash-lite-latest</strong> (Zero quota limits on Free Tier) or <strong>gemini-3.8-flash</strong> (20 req/day Free Tier cap).
+                          Recommended: <strong className="text-success">gemini-flash-lite-latest</strong> (Unlimited Free Tier) for reliable, quota-free reminder creation without 20 req/day bottlenecks.
                         </Form.Text>
                       </Form.Group>
                     </Col>

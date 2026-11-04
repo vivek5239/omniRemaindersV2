@@ -88,11 +88,11 @@ function sanitizeSettings(settings) {
   if (!settings || typeof settings !== 'object') return {};
   const sanitized = { ...settings };
 
-  // Migrate legacy or invalid model names to gemini-3.8-flash
-  const invalidModels = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+  // Migrate legacy or invalid model names to gemini-flash-lite-latest
+  const invalidModels = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
   if (!sanitized.geminiModel || invalidModels.includes(sanitized.geminiModel)) {
-    console.log(`[Settings] Migrating model "${sanitized.geminiModel}" to "gemini-3.8-flash"`);
-    sanitized.geminiModel = 'gemini-3.8-flash';
+    console.log(`[Settings] Migrating model "${sanitized.geminiModel}" to "gemini-flash-lite-latest"`);
+    sanitized.geminiModel = 'gemini-flash-lite-latest';
   }
 
   if (sanitized.gotifyUrl) {
@@ -122,7 +122,7 @@ async function ensureSettingsFile() {
   } catch (e) {
     const defaultSettings = {
       geminiApiKey: process.env.GEMINI_API_KEY || '',
-      geminiModel: 'gemini-3.8-flash',
+      geminiModel: 'gemini-flash-lite-latest',
       calendarificApiKey: '',
       gotifyUrl: '',
       gotifyToken: '',
@@ -479,16 +479,16 @@ app.get('/api/holiday-date', async (req, res) => {
 // ----------------------------------------------------
 
 const CURATED_GEMINI_MODELS = [
-  { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite Latest (Fastest & Free Tier Recommended)', description: 'Ultra-fast, generous rate limits, zero quota bottlenecks on Free Tier' },
-  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Flagship Flash)', description: 'Flagship reasoning model (limited to 20 requests/day on Google Free Tier)' },
+  { id: 'gemini-flash-lite-latest', name: 'Gemini Flash-Lite Latest (Recommended - Free Tier Quota-Free)', description: 'Fast, generous rate limits, zero daily quota bottlenecks on Free Tier' },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite', description: 'Stable lightweight production model with generous free quotas' },
   { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', description: 'Lightweight, rapid response model' },
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast, reliable production model' },
-  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses the newest Flash version' },
-  { id: 'gemini-pro-latest', name: 'Gemini Pro Latest', description: 'Dynamic pointer that always uses the newest Pro version' }
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Flagship - Capped at 20 req/day on Free Tier)', description: 'Flagship reasoning model (limited to 20 requests/day on Google Free Tier)' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Fast production model' },
+  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', description: 'Dynamic pointer that always uses newest Flash version' }
 ];
 
 function sanitizeModelName(modelName) {
-  const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-3.5-flash-lite'];
+  const invalid = ['gemini-3.5-pro', 'gemini-3.8-pro', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
   if (!modelName || invalid.includes(modelName)) {
     return 'gemini-flash-lite-latest';
   }
@@ -563,13 +563,12 @@ app.get('/api/groq/models', (req, res) => {
   });
 });
 
-async function generateContentWithRetry(genAI, primaryModel, contents, options, maxRetries = 2) {
+async function generateContentWithRetry(genAI, primaryModel, contents, options, maxRetries = 1) {
   const candidateModels = [
     primaryModel,
     'gemini-flash-lite-latest',
-    'gemini-3.1-flash-lite',
-    'gemini-3.6-flash',
-    'gemini-flash-latest'
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite'
   ].filter((v, i, a) => v && a.indexOf(v) === i);
 
   let lastError = null;
@@ -591,13 +590,13 @@ async function generateContentWithRetry(genAI, primaryModel, contents, options, 
         const isTransient = msg.includes('503') || msg.includes('high demand') || msg.includes('fetch failed');
 
         if (isQuotaOrLimit) {
-          console.warn(`[Gemini AI] Model ${modelToTry} quota exceeded on this tier. Instantly failing over to next model...`);
+          console.warn(`[Gemini AI] Model ${modelToTry} quota exceeded on this tier (429). Instantly failing over to next model...`);
           break; // Immediately break to try next candidate model!
         }
 
         if (isTransient && attempt < maxRetries) {
           console.warn(`[Gemini AI] Model ${modelToTry} busy (${msg.substring(0, 80)}). Waiting before retry...`);
-          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
           continue;
         }
 
@@ -624,7 +623,7 @@ app.post('/api/ai/create-reminder', async (req, res) => {
     return res.status(400).json({ error: 'Reminder text is required.' });
   }
 
-  const modelToUse = sanitizeModelName(model || currentSettings.geminiModel || 'gemini-3.8-flash');
+  const modelToUse = sanitizeModelName(model || currentSettings.geminiModel || 'gemini-flash-lite-latest');
   console.log(`[Gemini AI] Processing reminder using model: ${modelToUse}`);
 
   try {
@@ -699,7 +698,7 @@ app.post('/api/ai/analyze', async (req, res) => {
 
   try {
     const reminders = await getAllReminders();
-    const modelToUse = sanitizeModelName(currentSettings.geminiModel || 'gemini-3.8-flash');
+    const modelToUse = sanitizeModelName(currentSettings.geminiModel || 'gemini-flash-lite-latest');
     console.log(`[Gemini AI] Analyzing reminders using model: ${modelToUse}`);
 
     const genAI = new GoogleGenerativeAI(apiKey);
