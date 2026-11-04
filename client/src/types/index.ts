@@ -37,6 +37,8 @@ export interface Settings {
   smtpFrom: string;
   testRecipient: string;
   notificationsEnabled: boolean;
+  notificationWindowDays?: number;
+  timezone?: string;
   dailyCheckTime: string;
   lastDailyCheck: string | null;
 }

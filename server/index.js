@@ -133,6 +133,8 @@ async function ensureSettingsFile() {
       smtpFrom: '',
       testRecipient: '',
       notificationsEnabled: true,
+      notificationWindowDays: 7,
+      timezone: process.env.TZ || 'Europe/London',
       dailyCheckTime: '09:00',
       lastDailyCheck: null
     };
@@ -269,22 +271,32 @@ async function runReminderChecks(isManual = false) {
     }
 
     // 2. Determine due status
-    if (rem.Active !== 'Yes') continue;
+    const isActive = rem.Active === undefined || rem.Active === 'Yes' || rem.Active === true;
+    if (!isActive) continue;
 
     const dueDate = new Date(rem['Next Payment']);
     dueDate.setHours(0, 0, 0, 0);
 
     const diffTime = dueDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const remindBefore = typeof rem.remindBefore === 'number' ? rem.remindBefore : 3;
+    
+    // Lookahead notification window (defaults to 7 days or per-reminder remindBefore, whichever is greater)
+    const windowDays = typeof currentSettings.notificationWindowDays === 'number' 
+      ? currentSettings.notificationWindowDays 
+      : 7;
+    const remindBefore = typeof rem.remindBefore === 'number' 
+      ? Math.max(rem.remindBefore, windowDays) 
+      : windowDays;
 
-    // Trigger notification if due within `remindBefore` days or overdue by <= 3 days
+    // Trigger notification if due within window or overdue by <= 3 days
     if (diffDays <= remindBefore && diffDays >= -3) {
       const urgencyText = diffDays === 0
         ? '⚠️ DUE TODAY'
         : diffDays < 0
           ? `🚨 OVERDUE by ${Math.abs(diffDays)} day(s)`
-          : `📅 Due in ${diffDays} day(s)`;
+          : diffDays === 1
+            ? '📅 Due Tomorrow'
+            : `📅 Due in ${diffDays} day(s)`;
 
       const title = `${urgencyText}: ${rem.Name}`;
       const msg = `Reminder: "${rem.Name}" is scheduled for ${rem['Next Payment']}${rem.Time ? ' at ' + rem.Time : ''}.\nCategory: ${rem.Category || 'General'}${rem.Notes ? '\nNotes: ' + rem.Notes : ''}`;
@@ -365,6 +377,7 @@ function scheduleDailyReminder() {
   const timeStr = dailyCheckTime || '09:00';
   const [hour, minute] = timeStr.split(':').map(Number);
   const cronTime = `0 ${minute || 0} ${hour || 9} * * *`;
+  const tz = process.env.TZ || currentSettings.timezone || 'Europe/London';
 
   dailyReminderJobInstance = cron.schedule(
     cronTime,
@@ -377,11 +390,11 @@ function scheduleDailyReminder() {
     },
     {
       scheduled: true,
-      timezone: 'Asia/Kolkata'
+      timezone: tz
     }
   );
 
-  console.log(`[Scheduler] Daily reminder job scheduled at ${timeStr} (cron: "${cronTime}").`);
+  console.log(`[Scheduler] Daily reminder job scheduled at ${timeStr} in timezone "${tz}" (cron: "${cronTime}").`);
 }
 
 // ----------------------------------------------------
@@ -989,9 +1002,11 @@ app.get('/api/settings', async (req, res) => {
     const settings = sanitizeSettings(JSON.parse(data));
     res.json({
       ...settings,
+      notificationWindowDays: settings.notificationWindowDays ?? 7,
+      timezone: settings.timezone || process.env.TZ || 'Europe/London',
       dailyCheckTime: settings.dailyCheckTime || '09:00',
       lastDailyCheck: settings.lastDailyCheck || null,
-      geminiModel: settings.geminiModel || 'gemini-3.8-flash'
+      geminiModel: settings.geminiModel || 'gemini-flash-lite-latest'
     });
   } catch (error) {
     console.error(`[Settings] Error reading settings: ${error.message}`);

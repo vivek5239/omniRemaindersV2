@@ -26,6 +26,8 @@ export default function SettingsView() {
     smtpFrom: '',
     testRecipient: '',
     notificationsEnabled: true,
+    notificationWindowDays: 7,
+    timezone: 'Europe/London',
     dailyCheckTime: '09:00',
     lastDailyCheck: null,
   });
@@ -690,12 +692,43 @@ export default function SettingsView() {
 
                     <Col md={6}>
                       <Form.Group>
-                        <Form.Label className="fw-medium small">Daily Check Time (Asia/Kolkata)</Form.Label>
+                        <Form.Label className="fw-medium small">Daily Check Time</Form.Label>
                         <Form.Control
                           type="time"
                           value={config.dailyCheckTime || '09:00'}
                           onChange={(e) => setConfig({ ...config, dailyCheckTime: e.target.value })}
                         />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Scheduler Timezone</Form.Label>
+                        <Form.Select
+                          value={config.timezone || 'Europe/London'}
+                          onChange={(e) => setConfig({ ...config, timezone: e.target.value })}
+                        >
+                          <option value="Europe/London">Europe/London (UK - GMT/BST)</option>
+                          <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                          <option value="UTC">UTC (Coordinated Universal Time)</option>
+                          <option value="America/New_York">America/New_York (EST/EDT)</option>
+                        </Form.Select>
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="fw-medium small">Upcoming Notification Window (Days)</Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={config.notificationWindowDays ?? 7}
+                          onChange={(e) => setConfig({ ...config, notificationWindowDays: parseInt(e.target.value) || 7 })}
+                        />
+                        <Form.Text className="text-muted">
+                          Automatically checks and notifies for reminders occurring within the next <strong>{config.notificationWindowDays ?? 7} days</strong>.
+                        </Form.Text>
                       </Form.Group>
                     </Col>
 

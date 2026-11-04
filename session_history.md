@@ -1,5 +1,9 @@
 # OmniRemindersV2 — Session History & Conversation Audit
 
+- **Active Conversation ID**: `b140c059-3964-4006-a5eb-57f2d8da75c1`
+- **Docker Hub Target**: `vivek5239/reminders-app:latest`
+- **GitHub Repository**: `https://github.com/vivek5239/omniRemaindersV2.git`
+
 This document maintains a persistent chronological record of all agent development sessions, architectural decisions, user requests, and conversation IDs for the OmniRemindersV2 workspace.
 
 ---
@@ -129,7 +133,7 @@ This session established the core reminder management system and integrated exte
 
 ---
 
-### Session 3: Workspace Chat History Audit & Session History Linking
+### Session 3: Workspace Chat History Audit, Conversation Linking & 7-Day Notification Scheduler Fix
 * **Date**: 2026-11-04 11:40 UTC
 * **Conversation ID**: [`b140c059-3964-4006-a5eb-57f2d8da75c1`](conversation://b140c059-3964-4006-a5eb-57f2d8da75c1)
 
@@ -137,9 +141,15 @@ This session established the core reminder management system and integrated exte
 * Verify complete workspace chat history across all past sessions.
 * Update `session_history.md` with explicit Conversation IDs and clickable links.
 * Load and summarize all historical conversation contexts directly in the conversation.
+* Investigate notification scheduler: *"does the app checks daily to if there are notification for the next 7 days? i havent received any notification today"*.
 
-**Key Deliverables:**
-* Audited all brain conversation logs in `C:\Users\Vivek\.gemini\antigravity-cli\brain`.
-* Indexed and mapped each session to its exact `Conversation ID` and user interaction transcript.
-* Synchronized updated client build files into `server/public/`.
-* Updated `session_history.md` with structured conversation audit log and deep links.
+**Root Cause Analysis for Missed Notifications:**
+1. **Per-Reminder Window vs. 7 Days**: The scheduler was evaluating `diffDays <= (rem.remindBefore || 3)`. The upcoming **Diwali reminder** (`2026-11-08`) is 4 days away from today (`2026-11-04`), but had `remindBefore` set to `1` (1 day before). Hence, `4 <= 1` evaluated to false.
+2. **Missing `Active` Property**: In `data/reminders.json`, the Diwali reminder did not have an explicit `"Active": "Yes"` field (`undefined`). The backend logic used `if (rem.Active !== 'Yes') continue;`, inadvertently discarding it.
+3. **Hardcoded Scheduler Timezone**: The cron job in `server/index.js` was hardcoded to `timezone: 'Asia/Kolkata'` at 09:00 (which is 03:30 AM UTC/UK time), misaligning with the user's host timezone.
+
+**Implementations & Fixes:**
+* **Global 7-Day Notification Lookahead**: Enhanced `server/index.js` to evaluate `Math.max(rem.remindBefore, windowDays)` where `windowDays` defaults to `7` (configurable in Settings). Any active reminder occurring within the next 7 days triggers alerts.
+* **Active Status Normalization**: Updated filter to `const isActive = rem.Active === undefined || rem.Active === 'Yes' || rem.Active === true;` ensuring reminders default to active. Explicitly marked Diwali reminder as active with `remindBefore: 7`.
+* **Dynamic Timezone & Window Settings**: Added `notificationWindowDays` and `timezone` (`Europe/London`, `Asia/Kolkata`, `UTC`) to `SettingsView.tsx` and `server/index.js`, dynamically honoring `process.env.TZ`.
+* **Live Verification**: Rebuilt client assets into `server/public/`, triggered `POST /api/test/reminders`, and verified that Gotify and Email alerts for **Diwali reminder** (`2026-11-08`, due in 4 days) were dispatched with HTTP 200 success.
